@@ -88,11 +88,6 @@ class Agent_DDH:
                  allow_short=True):           # NEW: Auto-tune for bolder trading
         self.balance = float(balance)
         self.underlying_df = pd.read_csv("DataSet/underlying.csv", parse_dates=['Date'])
-        # Ensure RV_30d exists; if not, compute it
-        if 'RV_30d' not in self.underlying_df.columns:
-            self.underlying_df['log_ret'] = np.log(self.underlying_df['Close'] / self.underlying_df['Close'].shift(1))
-            self.underlying_df['RV_30d'] = np.sqrt(252) * self.underlying_df['log_ret'].rolling(30).std()
-            self.underlying_df['RV_30d'].fillna(method='bfill', inplace=True)
         
         self.call_df = None
         self.put_df = None
@@ -295,7 +290,7 @@ class Agent_DDH:
             warnings.warn(f"No underlying data for {date}")
             return
         S = float(und_row['Close'].iloc[0])
-        RV = float(und_row['RV_30d'].iloc[0])  # horizon-matched!
+        RV = float(und_row['RV'].iloc[0])
         
         # Get option data
         call_rows = self.call_df[self.call_df['timestamp'].dt.normalize() == date_norm]

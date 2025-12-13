@@ -56,15 +56,6 @@ class Agent_Straddles:
         self.balance = float(balance)
         self.underlying_df = pd.read_csv("DataSet/underlying.csv", parse_dates=['Date'])
         
-        # Compute RV_30d if missing
-        if 'RV_30d' not in self.underlying_df.columns:
-            log_ret = np.log(self.underlying_df['Close'] / self.underlying_df['Close'].shift(1))
-            rv_series = np.sqrt(252) * log_ret.rolling(30).std()
-            rv_series = rv_series.bfill().ffill()
-            if rv_series.isna().all():
-                rv_series = pd.Series(0.2, index=self.underlying_df.index)
-            self.underlying_df['RV_30d'] = rv_series
-        
         # Position state
         self.call_df = None
         self.put_df = None
@@ -208,7 +199,7 @@ class Agent_Straddles:
         if und_row.empty:
             return
         S = float(und_row['Close'].iloc[0])
-        RV = float(und_row['RV_30d'].iloc[0])
+        RV = float(und_row['RV'].iloc[0])
         
         # Get options
         cr = self.call_df[self.call_df['timestamp'].dt.normalize() == date_norm]
