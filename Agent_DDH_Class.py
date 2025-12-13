@@ -74,17 +74,18 @@ class Agent_DDH:
     def __init__(self, 
                  balance=1000.0,
                  vega_risk_frac=0.1,         # e.g., 10% of NAV in vega
-                 max_vega_per_trade=200,     # cap absolute vega
-                 vrp_z_threshold=1.0,        # trade only if |VRP_z| > 1.0
+                 max_vega_per_trade=500,     # cap absolute vega (increased for bravery)
+                 vrp_threshold=1.0,        # trade only if |VRP_z| > 1.0
                  max_leverage=1.5,           # max notional / NAV
                  tx_cost=0.005,              # 0.5% round-trip (realistic for options)
                  rehedge_freq=1,             # daily rehedge
                  delta_drift_threshold=0.1,  # rehedge if |delta error| > 10% of position
-                 stop_loss_frac=0.05,        # stop if trade P&L < -5% of premium paid
+                 stop_loss_frac=0.15,        # stop if trade P&L < -15% of premium paid (loosened)
+                 profit_take_frac=-1.0,      # take profit at +X% of premium (default -1 = disabled)
                  min_ttm=1/252,              # close if TTM < 1 day
                  max_ttm=60/252,             # only consider <=60 DTE
                  allow_long=True,
-                 allow_short=True):
+                 allow_short=True):           # NEW: Auto-tune for bolder trading
         self.balance = float(balance)
         self.underlying_df = pd.read_csv("DataSet/underlying.csv", parse_dates=['Date'])
         # Ensure RV_30d exists; if not, compute it
@@ -103,12 +104,13 @@ class Agent_DDH:
         # Strategy params
         self.vega_risk_frac = vega_risk_frac
         self.max_vega_per_trade = max_vega_per_trade
-        self.vrp_z_threshold = vrp_z_threshold
+        self.vrp_threshold = vrp_threshold
         self.max_leverage = max_leverage
         self.tx_cost = tx_cost
         self.rehedge_freq = rehedge_freq
         self.delta_drift_threshold = delta_drift_threshold
         self.stop_loss_frac = stop_loss_frac
+        self.profit_take_frac = profit_take_frac if profit_take_frac > 0 else -1.0  # Disable if <=0
         self.min_ttm = min_ttm
         self.max_ttm = max_ttm
         self.allow_long = allow_long
@@ -155,6 +157,28 @@ class Agent_DDH:
                             self.call_num * call_price +
                             self.put_num * put_price +
                             self.underlying_num * S)
+        
+        # Calculate Greeks every timestep if position is open
+        if self.trade_open and self.call_df is not None and self.put_df is not None:
+            call_row_df = self.call_df[self.call_df['timestamp'].dt.normalize() == date_norm]
+            put_row_df = self.put_df[self.put_df['timestamp'].dt.normalize() == date_norm]
+            if not call_row_df.empty and not put_row_df.empty:
+                call_row = call_row_df.iloc[0].copy()
+                put_row = put_row_df.iloc[0].copy()
+                call_row['S'] = S
+                put_row['S'] = S
+                call_row['k'] = float(call_row['k'])
+                put_row['k'] = float(put_row['k'])
+                call_row['r'] = float(call_row['r'])
+                put_row['r'] = call_row['r']
+                call_row['ttm'] = float(call_row['ttm'])
+                put_row['ttm'] = call_row['ttm']
+                
+                # Update Greeks
+                new_greeks = get_greeks_analytical(call_row, put_row)
+                self.greeks.update(new_greeks)
+                self.ttm = call_row['ttm']
+        
         return self.total_value
 
     def _apply_tx_cost(self, cash_flow):
@@ -305,32 +329,13 @@ class Agent_DDH:
         port_IV = (call_row['imp_vol'] + put_row['imp_vol']) / 2
         VRP = port_IV - RV
         
-        # Estimate VRP stdev (60-day rolling)
-        vrp_hist = []
-        for i in range(-60, 0):
-            past_date = date_norm + pd.Timedelta(days=i)
-            past_und = self.underlying_df[self.underlying_df['Date'].dt.normalize() == past_date]
-            if not past_und.empty:
-                try:
-                    past_call = self.call_df[self.call_df['timestamp'].dt.normalize() == past_date]
-                    past_put = self.put_df[self.put_df['timestamp'].dt.normalize() == past_date]
-                    if not past_call.empty and not past_put.empty:
-                        iv_past = (float(past_call.iloc[0]['imp_vol']) + float(past_put.iloc[0]['imp_vol'])) / 2
-                        rv_past = float(past_und['RV_30d'].iloc[0])
-                        vrp_hist.append(iv_past - rv_past)
-                except:
-                    pass
-        vrp_std = np.std(vrp_hist) if len(vrp_hist) > 10 else 0.05  # fallback
-        VRP_z = VRP / max(vrp_std, 0.01)
-        
         # Decision
         action = None
-        if abs(VRP_z) < self.vrp_z_threshold:
+        if abs(VRP) < self.vrp_threshold:
             return  # no signal
-        
-        if VRP_z > self.vrp_z_threshold and self.allow_short:
+        if VRP > self.vrp_threshold and self.allow_short:
             action = 'short'
-        elif VRP_z < -self.vrp_z_threshold and self.allow_long:
+        elif VRP < -self.vrp_threshold and self.allow_long:
             action = 'long'
         else:
             return
@@ -370,8 +375,6 @@ class Agent_DDH:
         self.r = call_row['r']
         self.ttm = ttm
         
-        # print(f"[{date.date()}] {action.upper()} {int(abs(units))} straddle(s) at K={self.k:.0f}, "
-        #       f"IV={port_IV:.2%}, RV={RV:.2%}, VRP_z={VRP_z:.1f}, Vega={self.greeks['vega'] * units:.1f}")
 
     def should_exit(self, date):
         if not self.trade_open:
@@ -382,18 +385,20 @@ class Agent_DDH:
         if und_row.empty:
             return False, ""
         
-        # Check TTM
-        if self.ttm is not None and self.ttm < self.min_ttm:
-            return True, "expiry"
+        # UPDATED: Relaxed TTM exit — only if critically low
+        if self.ttm is not None and self.ttm < self.min_ttm / 2:  # e.g., <0.5 days
+            return True, "near-expiry"
         
-        # Check P&L stop-loss
+        # UPDATED: Check P&L stop-loss (looser default)
         current_val = self.cal_value(date)
         if not np.isnan(current_val) and self.entry_value is not None:
             pnl = current_val - self.entry_value
-            if pnl < -self.stop_loss_frac * self.entry_premium:
-                return True, f"stop-loss ({pnl/self.entry_premium:.1%})"
-        
-        # Optional: VRP sign flip
-        # (implement if you compute VRP daily)
+            pnl_frac = pnl / self.entry_premium
+            if pnl_frac < -self.stop_loss_frac:  # e.g., -15%
+                return True, f"stop-loss ({pnl_frac:.1%})"
+            
+            # NEW: Optional profit-take (disabled if profit_take_frac <=0)
+            if self.profit_take_frac > 0 and pnl_frac > self.profit_take_frac:
+                return True, f"profit-take ({pnl_frac:.1%})"
         
         return False, ""

@@ -46,7 +46,7 @@ class Agent_Straddles:
                  vega_risk_frac=0.1,          # e.g., 10% NAV in vega
                  premium_risk_frac=0.05,      # e.g., 5% NAV per trade
                  max_units=10,                # max contracts per trade
-                 vrp_z_threshold=1.0,
+                 vrp_threshold=1.0,
                  tx_cost=0.005,               # 0.5% round-trip
                  stop_loss_frac=0.20,         # exit if loss > 20% of premium paid
                  min_ttm=1/252,
@@ -78,7 +78,7 @@ class Agent_Straddles:
         self.vega_risk_frac = vega_risk_frac
         self.premium_risk_frac = premium_risk_frac
         self.max_units = max_units
-        self.vrp_z_threshold = vrp_z_threshold
+        self.vrp_threshold = vrp_threshold
         self.tx_cost = tx_cost
         self.stop_loss_frac = stop_loss_frac
         self.min_ttm = min_ttm
@@ -121,6 +121,24 @@ class Agent_Straddles:
                 put_price = float(pr.iloc[0]['close'])
         
         self.total_value = self.balance + self.call_num * call_price + self.put_num * put_price
+        
+        # Calculate Greeks every timestep if position is open
+        if self.trade_open and self.call_df is not None and self.put_df is not None:
+            cr = self.call_df[self.call_df['timestamp'].dt.normalize() == date_norm]
+            pr = self.put_df[self.put_df['timestamp'].dt.normalize() == date_norm]
+            if not cr.empty and not pr.empty:
+                call_row = cr.iloc[0]
+                put_row = pr.iloc[0]
+                K = float(call_row['k'])
+                T = float(call_row['ttm'])
+                r = float(call_row['r'])
+                sigma_c = float(call_row['imp_vol'])
+                sigma_p = float(put_row['imp_vol'])
+                
+                # Update Greeks
+                self.greeks = get_straddle_greeks(S, K, T, r, sigma_c, sigma_p)
+                self.ttm = T
+        
         return self.total_value
 
     def close_position(self, date, reason=""):
@@ -216,32 +234,14 @@ class Agent_Straddles:
         # VRP z-score
         IV = (sigma_c + sigma_p) / 2
         VRP = IV - RV
-        
-        # Historical VRP std (60-day)
-        vrp_hist = []
-        for i in range(1, 61):
-            past_date = date_norm - pd.Timedelta(days=i)
-            past_und = self.underlying_df[self.underlying_df['Date'].dt.normalize() == past_date]
-            if not past_und.empty:
-                try:
-                    past_cr = self.call_df[self.call_df['timestamp'].dt.normalize() == past_date]
-                    past_pr = self.put_df[self.put_df['timestamp'].dt.normalize() == past_date]
-                    if not past_cr.empty and not past_pr.empty:
-                        iv_past = (float(past_cr.iloc[0]['imp_vol']) + float(past_pr.iloc[0]['imp_vol'])) / 2
-                        rv_past = float(past_und['RV_30d'].iloc[0])
-                        vrp_hist.append(iv_past - rv_past)
-                except:
-                    pass
-        vrp_std = np.std(vrp_hist) if len(vrp_hist) > 10 else 0.05
-        VRP_z = VRP / max(vrp_std, 0.01)
-        
+
         # Decision
         action = None
-        if abs(VRP_z) < self.vrp_z_threshold:
+        if abs(VRP) < self.vrp_threshold:
             return
-        if VRP_z > self.vrp_z_threshold and self.allow_short:
+        if VRP > self.vrp_threshold and self.allow_short:
             action = 'short'
-        elif VRP_z < -self.vrp_z_threshold and self.allow_long:
+        elif VRP < -self.vrp_threshold and self.allow_long:
             action = 'long'
         else:
             return
