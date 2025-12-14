@@ -9,6 +9,16 @@ This project implements a volatility trading strategy that:
 - **Longs straddles** when IV < RV - betting that IV is underpriced
 - Compares **delta-hedged** vs **unhedged** strategies to demonstrate the impact of delta hedging on risk management
 
+### Performance Visualization
+
+The backtest results demonstrate the comparative performance of delta-hedged and unhedged strategies:
+
+![Portfolio Value and Returns](demo/value_and_return_rate.png)
+*Portfolio value evolution and cumulative returns comparison between delta-hedged and unhedged strategies. The chart shows how delta hedging affects portfolio performance, volatility, and risk-adjusted returns over the backtest period.*
+
+![Greeks Monitoring](demo/Greeks_monitor.png)
+*Portfolio Greeks (Delta, Gamma, Vega, Theta) exposure over time for both strategies. This visualization highlights how delta hedging maintains near-zero delta exposure while the unhedged strategy retains directional risk. The charts also show vega and theta exposure, which are key drivers of volatility trading profitability.*
+
 ## Strategy Logic
 
 ### Core Concept
