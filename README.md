@@ -11,10 +11,10 @@ This project implements a volatility trading strategy that:
 
 The backtest results demonstrate the superior risk-adjusted performance of the delta-hedged strategy:
 
-| Strategy | Sharpe Ratio | Annual Volatility |
-|----------|--------------|-------------------|
-| **Delta-Hedged** | 2.14 | 8.03% |
-| **Pure Straddle** | 0.65 | 13.92% |
+| Strategy | Sharpe Ratio | Annual Return | Annual Volatility |
+|----------|--------------|---------------|-------------------|
+| **Delta-Hedged** | 2.14 | 17.1537% | 8.03% |
+| **Pure Straddle** | 0.65 |  9.0516%  |13.92% |
 
 ### Performance Visualization
 
