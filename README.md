@@ -19,6 +19,20 @@ The backtest results demonstrate the comparative performance of delta-hedged and
 ![Greeks Monitoring](demo/Greeks_monitor.png)
 *Portfolio Greeks (Delta, Gamma, Vega, Theta) exposure over time for both strategies. This visualization highlights how delta hedging maintains near-zero delta exposure while the unhedged strategy retains directional risk. The charts also show vega and theta exposure, which are key drivers of volatility trading profitability.*
 
+### Risk-Return Metrics
+
+The backtest results demonstrate the superior risk-adjusted performance of the delta-hedged strategy:
+
+| Strategy | Sharpe Ratio | Annual Volatility |
+|----------|--------------|-------------------|
+| **Delta-Hedged** | 2.14 | 8.03% |
+| **Pure Straddle** | 0.65 | 13.92% |
+
+**Key Findings:**
+- **Delta-Hedged Strategy**: Achieves a Sharpe Ratio of 2.14 with annual volatility of 8.03%, demonstrating excellent risk-adjusted returns
+- **Pure Straddle Strategy**: Shows a lower Sharpe Ratio of 0.65 with higher volatility of 13.92%, indicating greater risk exposure
+- **Delta Hedging Benefit**: The delta-hedged approach significantly reduces volatility (8.03% vs 13.92%) while maintaining superior risk-adjusted returns, highlighting the effectiveness of delta hedging in managing directional risk
+
 ## Strategy Logic
 
 ### Core Concept
