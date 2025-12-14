@@ -31,6 +31,42 @@ The strategy is based on the volatility risk premium (VRP), which is the differe
 - **Delta-Hedged Strategy (`Agent_DDH`)**: Actively hedges delta exposure by trading the underlying asset to maintain delta neutrality
 - **Unhedged Strategy (`Agent_Straddles`)**: Maintains pure option positions without delta hedging
 
+### Capital Allocation
+
+The strategy uses a **vega-based position sizing** approach to allocate capital dynamically based on the total account value:
+
+#### Vega-Based Sizing Formula
+```
+Target Vega = Total Account Value × Vega Risk Fraction
+Number of Contracts = Target Vega / Per-Contract Vega
+```
+
+#### Key Components:
+- **Total Account Value (NAV)**: The current net asset value of the portfolio, including:
+  - Cash balance
+  - Option positions (marked-to-market)
+  - Underlying asset positions (for delta-hedged strategy)
+
+- **Vega Risk Fraction**: A configurable parameter (typically 0.1 to 1.0) that determines what percentage of total account value should be allocated to vega risk
+  - Example: If NAV = $10,000 and vega_risk_frac = 0.5, then target vega = $5,000
+
+- **Per-Contract Vega**: The vega exposure of a single straddle contract, calculated using Black-Scholes Greeks
+
+#### Benefits of Vega-Based Allocation:
+1. **Risk Scaling**: Position sizes automatically scale with account growth or decline
+2. **Volatility Targeting**: Maintains consistent volatility exposure relative to portfolio size
+3. **Capital Efficiency**: Allocates capital based on the primary risk factor (volatility) rather than premium paid
+4. **Dynamic Adjustment**: As account value changes, new positions are sized proportionally
+
+#### Example:
+- Account Value: $10,000
+- Vega Risk Fraction: 50% (0.5)
+- Target Vega: $5,000
+- Per-Contract Vega: $250
+- **Result**: Trade 20 contracts ($5,000 / $250 = 20)
+
+This approach ensures that the strategy maintains consistent risk exposure relative to portfolio size, allowing for proper compounding and risk management as the account grows or shrinks.
+
 ## Project Structure
 
 ```
@@ -192,24 +228,4 @@ polygon-api-client
 - Realized volatility is calculated using 20-day rolling window
 - Trading occurs on the first Tuesday of each month
 - Options selected are ATM with expiration on second Friday of next month
-
-## Limitations
-
-- Assumes constant risk-free rate
-- Uses Black-Scholes model (assumes log-normal distribution)
-- Transaction costs can be configured but may not reflect real-world slippage
-- No consideration of early exercise for American options
-- Limited to single underlying asset (AAPL)
-
-## Future Enhancements
-
-- Multi-asset support
-- Dynamic volatility models (GARCH, stochastic volatility)
-- Advanced Greeks (higher-order derivatives)
-- Portfolio optimization across multiple positions
-- Real-time trading integration
-
-## License
-
-This project is for educational and research purposes.
 
