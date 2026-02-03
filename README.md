@@ -60,25 +60,14 @@ Number of Contracts = Target Vega / Per-Contract Vega
   - Option positions (marked-to-market)
   - Underlying asset positions (for delta-hedged strategy)
 
-- **Vega Risk Fraction**: A configurable parameter (typically 0.1 to 1.0) that determines what percentage of total account value should be allocated to vega risk
-  - Example: If NAV = $10,000 and vega_risk_frac = 0.5, then target vega = $5,000
+- **Total invest (debit)**: When opening a long straddle (total price > 0), position size is set so that total cash invested = **max_invest × total balance**.
+- **Total invest (credit)**: When opening a short straddle (total price < 0), position size is set by vega/premium risk parameters.
 
-- **Per-Contract Vega**: The vega exposure of a single straddle contract, calculated using Black-Scholes Greeks
+#### Sizing logic:
+1. **Long (debit)**: total invest = max_invest × balance → units = (max_invest × balance) / cost_per_unit (premium + underlying for DDH; premium only for straddle).
+2. **Short (credit)**: position size is determined by vega risk (vega_risk_frac × balance).
 
-#### Benefits of Vega-Based Allocation:
-1. **Risk Scaling**: Position sizes automatically scale with account growth or decline
-2. **Volatility Targeting**: Maintains consistent volatility exposure relative to portfolio size
-3. **Capital Efficiency**: Allocates capital based on the primary risk factor (volatility) rather than premium paid
-4. **Dynamic Adjustment**: As account value changes, new positions are sized proportionally
-
-#### Example:
-- Account Value: $10,000
-- Vega Risk Fraction: 50% (0.5)
-- Target Vega: $5,000
-- Per-Contract Vega: $250
-- **Result**: Trade 20 contracts ($5,000 / $250 = 20)
-
-This approach ensures that the strategy maintains consistent risk exposure relative to portfolio size, allowing for proper compounding and risk management as the account grows or shrinks.
+Position sizes scale with account value.
 
 ## Project Structure
 
@@ -117,11 +106,10 @@ Volatility-based_Quant_Strategy/
 - Pure straddle strategy without delta hedging
 - Position sizing based on vega risk or premium risk
 - Tracks portfolio Greeks (Delta, Gamma, Vega, Theta)
-- Exit conditions: stop-loss, time-to-maturity limits
+- Exit conditions: time-to-maturity limits
 
 #### `Agent_DDH` (Delta-Hedged)
-- Straddle strategy with dynamic delta hedging
-- Rehedges periodically to maintain delta neutrality
+- Straddle strategy with initial delta hedging at entry
 - Reduces directional risk exposure
 - Same entry/exit logic as unhedged strategy
 
@@ -144,10 +132,7 @@ Volatility-based_Quant_Strategy/
 - Configurable risk limits and maximum position sizes
 
 ### Risk Management
-- **Stop-loss**: Exits positions when losses exceed threshold
 - **Time-to-maturity limits**: Closes positions near expiration
-- **Delta drift monitoring**: Rehedges when delta deviates significantly
-- **Transaction costs**: Configurable trading costs
 
 ### Greeks Tracking
 - **Delta**: Price sensitivity to underlying moves
@@ -179,14 +164,7 @@ Run `Back_test.ipynb` to:
 ```python
 agent_ddh = Agent_DDH(
     balance=10000.0,              # Initial capital
-    vega_risk_frac=1.0,           # Vega risk as % of NAV
-    max_vega_per_trade=5000,      # Maximum vega per trade
     vrp_threshold=0.0005,         # VRP threshold for trading
-    max_leverage=20,              # Maximum leverage
-    tx_cost=0,                    # Transaction cost (0-1)
-    rehedge_freq=1000,            # Rehedging frequency (days)
-    delta_drift_threshold=0.05,   # Delta drift threshold
-    stop_loss_frac=0.5,           # Stop-loss fraction
 )
 ```
 
@@ -194,13 +172,7 @@ agent_ddh = Agent_DDH(
 ```python
 agent_straddle = Agent_Straddles(
     balance=10000.0,              # Initial capital
-    sizing_method='vega',         # 'vega' or 'premium'
-    vega_risk_frac=0.5,           # Vega risk as % of NAV
-    premium_risk_frac=1.0,        # Premium risk as % of NAV
-    max_units=500000,             # Maximum contracts per trade
     vrp_threshold=0.05,           # VRP threshold for trading
-    tx_cost=0,                    # Transaction cost
-    stop_loss_frac=0.5,           # Stop-loss fraction
 )
 ```
 

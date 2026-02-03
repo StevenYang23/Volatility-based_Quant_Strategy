@@ -74,18 +74,11 @@ class Agent_DDH:
     def __init__(self, 
                  balance=1000.0,
                  vega_risk_frac=0.1,         # e.g., 10% of NAV in vega
-                 max_vega_per_trade=500,     # cap absolute vega (increased for bravery)
                  vrp_threshold=1.0,        # trade only if |VRP_z| > 1.0
-                 max_leverage=1.5,           # max notional / NAV
-                 tx_cost=0.005,              # 0.5% round-trip (realistic for options)
-                 rehedge_freq=1,             # daily rehedge
-                 delta_drift_threshold=0.1,  # rehedge if |delta error| > 10% of position
-                 stop_loss_frac=0.15,        # stop if trade P&L < -15% of premium paid (loosened)
-                 profit_take_frac=-1.0,      # take profit at +X% of premium (default -1 = disabled)
+                 vrp_close_threshold=None,  # close when (IV - RV) < this (None = disabled)
+                 delta_rehedge_threshold=None,  # rehedge when |net_delta| > this (None = disabled)
                  min_ttm=1/252,              # close if TTM < 1 day
-                 max_ttm=60/252,             # only consider <=60 DTE
-                 allow_long=True,
-                 allow_short=True):           # NEW: Auto-tune for bolder trading
+                 max_ttm=60/252):            # only consider <=60 DTE
         self.balance = float(balance)
         self.underlying_df = pd.read_csv("DataSet/underlying.csv", parse_dates=['Date'])
         # Ensure RV_30d exists; if not, compute it
@@ -103,22 +96,16 @@ class Agent_DDH:
         
         # Strategy params
         self.vega_risk_frac = vega_risk_frac
-        self.max_vega_per_trade = max_vega_per_trade
         self.vrp_threshold = vrp_threshold
-        self.max_leverage = max_leverage
-        self.tx_cost = tx_cost
-        self.rehedge_freq = rehedge_freq
-        self.delta_drift_threshold = delta_drift_threshold
-        self.stop_loss_frac = stop_loss_frac
-        self.profit_take_frac = profit_take_frac if profit_take_frac > 0 else -1.0  # Disable if <=0
+        self.vrp_close_threshold = vrp_close_threshold
+        self.delta_rehedge_threshold = delta_rehedge_threshold
         self.min_ttm = min_ttm
         self.max_ttm = max_ttm
-        self.allow_long = allow_long
-        self.allow_short = allow_short
         
         # State tracking
-        self.last_hedge_date = None
         self.greeks = {'delta': 0.0, 'gamma': 0.0, 'vega': 0.0, 'theta': 0.0}
+        self.current_call_sym = None  # for rehedge: close and reopen same options
+        self.current_put_sym = None
         self.k = None
         self.r = None
         self.ttm = None
@@ -181,59 +168,6 @@ class Agent_DDH:
         
         return self.total_value
 
-    def _apply_tx_cost(self, cash_flow):
-        """Apply tx cost: inflows reduced, outflows increased."""
-        if cash_flow > 0:
-            return cash_flow * (1 - self.tx_cost)  # receive less
-        else:
-            return cash_flow * (1 + self.tx_cost)  # pay more
-
-    def rehedge(self, date):
-        if not self.trade_open:
-            return
-        
-        date_norm = self._normalize_date(date)
-        und_row = self.underlying_df[self.underlying_df['Date'].dt.normalize() == date_norm]
-        if und_row.empty:
-            return
-        S = float(und_row['Close'].iloc[0])
-        
-        call_row_df = self.call_df[self.call_df['timestamp'].dt.normalize() == date_norm]
-        put_row_df = self.put_df[self.put_df['timestamp'].dt.normalize() == date_norm]
-        if call_row_df.empty or put_row_df.empty:
-            return
-        
-        call_row = call_row_df.iloc[0].copy()
-        put_row = put_row_df.iloc[0].copy()
-        call_row['S'] = S
-        put_row['S'] = S
-        call_row['k'] = float(call_row['k'])
-        put_row['k'] = float(put_row['k'])
-        call_row['r'] = float(call_row['r'])
-        put_row['r'] = call_row['r']
-        self.ttm = float(call_row['ttm'])
-        
-        # Recompute Greeks
-        new_greeks = get_greeks_analytical(call_row, put_row)
-        self.greeks.update(new_greeks)
-        
-        # Target hedge: neutralize total delta
-        target_underlying = -self.call_num * self.greeks['delta']
-        delta_error = target_underlying - self.underlying_num
-        
-        # Rehedge if: time due OR delta drift too large
-        time_due = (self.last_hedge_date is None) or ((date - self.last_hedge_date).days >= self.rehedge_freq)
-        drift_too_large = abs(delta_error) > self.delta_drift_threshold * max(1, abs(self.call_num))
-        
-        if time_due or drift_too_large:
-            trade_size = delta_error
-            trade_value = trade_size * S
-            net_cash = self._apply_tx_cost(-trade_value)  # negative: buying costs cash
-            self.balance += net_cash
-            self.underlying_num = target_underlying
-            self.last_hedge_date = date
-            # print(f"[{date.date()}] Rehedged: Δ={trade_size:+.2f}, Cost=${abs(trade_value * self.tx_cost):.2f}")
-
     def close_position(self, date, reason=""):
         if not self.trade_open:
             return
@@ -258,11 +192,11 @@ class Agent_DDH:
         
         # Close options
         opt_pnl = self.call_num * call_price + self.put_num * put_price
-        self.balance += self._apply_tx_cost(opt_pnl)
+        self.balance += opt_pnl
         
         # Close underlying
         und_pnl = self.underlying_num * S
-        self.balance += self._apply_tx_cost(und_pnl)
+        self.balance += und_pnl
         
         # Reset
         self.call_num = 0.0
@@ -271,6 +205,8 @@ class Agent_DDH:
         self.call_df = None
         self.put_df = None
         self.greeks = {'delta': 0.0, 'gamma': 0.0, 'vega': 0.0, 'theta': 0.0}
+        self.current_call_sym = None
+        self.current_put_sym = None
         self.trade_open = False
         self.entry_value = None
         self.entry_premium = None
@@ -333,9 +269,9 @@ class Agent_DDH:
         action = None
         if abs(VRP) < self.vrp_threshold:
             return  # no signal
-        if VRP > self.vrp_threshold and self.allow_short:
+        if VRP > self.vrp_threshold:
             action = 'short'
-        elif VRP < -self.vrp_threshold and self.allow_long:
+        elif VRP < -self.vrp_threshold:
             action = 'long'
         else:
             return
@@ -343,7 +279,6 @@ class Agent_DDH:
         # Vega-based sizing
         target_vega = self.total_value * self.vega_risk_frac
         units = target_vega / self.greeks['vega']
-        units = np.sign(units) * min(abs(units), self.max_vega_per_trade / abs(self.greeks['vega']))
         units = np.clip(units, -10, 10)  # hard cap
         units = np.round(units)  # round to whole contracts
         if abs(units) < 1:
@@ -364,17 +299,32 @@ class Agent_DDH:
         self.underlying_num = -units * self.greeks['delta']  # delta-neutral init
         
         # Cash flow: long → pay (negative), short → receive (positive)
-        self.balance += self._apply_tx_cost(-net_premium)
+        self.balance += -net_premium
         
-        # Track for stop-loss
         self.entry_value = self.balance + net_premium  # pre-trade value
         self.entry_premium = abs(net_premium)
         self.trade_open = True
-        self.last_hedge_date = date
+        self.current_call_sym = call_sym
+        self.current_put_sym = put_sym
         self.k = call_row['k']
         self.r = call_row['r']
         self.ttm = ttm
         
+
+    def rehedge(self, date):
+        """If |net_delta| > delta_rehedge_threshold, close and reopen the position (same options)."""
+        if not self.trade_open or self.delta_rehedge_threshold is None:
+            return
+        self.cal_value(date)  # refresh Greeks
+        net_delta = self.greeks['delta'] * self.call_num + self.underlying_num
+        if abs(net_delta) <= self.delta_rehedge_threshold:
+            return
+        call_sym = self.current_call_sym
+        put_sym = self.current_put_sym
+        if call_sym is None or put_sym is None:
+            return
+        self.close_position(date, reason="rehedge")
+        self.build_position(call_sym, put_sym, date)
 
     def should_exit(self, date):
         if not self.trade_open:
@@ -385,20 +335,18 @@ class Agent_DDH:
         if und_row.empty:
             return False, ""
         
-        # UPDATED: Relaxed TTM exit — only if critically low
+        # Relaxed TTM exit — only if critically low
         if self.ttm is not None and self.ttm < self.min_ttm / 2:  # e.g., <0.5 days
             return True, "near-expiry"
         
-        # UPDATED: Check P&L stop-loss (looser default)
-        current_val = self.cal_value(date)
-        if not np.isnan(current_val) and self.entry_value is not None:
-            pnl = current_val - self.entry_value
-            pnl_frac = pnl / self.entry_premium
-            if pnl_frac < -self.stop_loss_frac:  # e.g., -15%
-                return True, f"stop-loss ({pnl_frac:.1%})"
-            
-            # NEW: Optional profit-take (disabled if profit_take_frac <=0)
-            if self.profit_take_frac > 0 and pnl_frac > self.profit_take_frac:
-                return True, f"profit-take ({pnl_frac:.1%})"
+        # Close when (IV - RV) < vrp_close_threshold
+        if self.vrp_close_threshold is not None and self.call_df is not None and self.put_df is not None:
+            call_row_df = self.call_df[self.call_df['timestamp'].dt.normalize() == date_norm]
+            put_row_df = self.put_df[self.put_df['timestamp'].dt.normalize() == date_norm]
+            if not call_row_df.empty and not put_row_df.empty:
+                RV = float(und_row['RV_30d'].iloc[0])
+                IV = (float(call_row_df.iloc[0]['imp_vol']) + float(put_row_df.iloc[0]['imp_vol'])) / 2
+                if (IV - RV) < self.vrp_close_threshold:
+                    return True, f"vrp_close (IV-RV={IV-RV:.4f})"
         
         return False, ""

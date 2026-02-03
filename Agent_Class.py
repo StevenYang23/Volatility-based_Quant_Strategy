@@ -42,17 +42,11 @@ def get_straddle_greeks(S, K, T, r, sigma_c, sigma_p):
 class Agent_Straddles:
     def __init__(self,
                  balance=10000.0,
-                 sizing_method='vega',        # 'vega' or 'premium'
                  vega_risk_frac=0.1,          # e.g., 10% NAV in vega
-                 premium_risk_frac=0.05,      # e.g., 5% NAV per trade
-                 max_units=10,                # max contracts per trade
                  vrp_threshold=1.0,
-                 tx_cost=0.005,               # 0.5% round-trip
-                 stop_loss_frac=0.20,         # exit if loss > 20% of premium paid
+                 vrp_close_threshold=None,   # close when (IV - RV) < this (None = disabled)
                  min_ttm=1/252,
-                 max_ttm=45/252,
-                 allow_long=True,
-                 allow_short=True):
+                 max_ttm=45/252):
         self.balance = float(balance)
         self.underlying_df = pd.read_csv("DataSet/underlying.csv", parse_dates=['Date'])
         
@@ -74,17 +68,11 @@ class Agent_Straddles:
         self.trade_open = False
         
         # Strategy params
-        self.sizing_method = sizing_method
         self.vega_risk_frac = vega_risk_frac
-        self.premium_risk_frac = premium_risk_frac
-        self.max_units = max_units
         self.vrp_threshold = vrp_threshold
-        self.tx_cost = tx_cost
-        self.stop_loss_frac = stop_loss_frac
+        self.vrp_close_threshold = vrp_close_threshold
         self.min_ttm = min_ttm
         self.max_ttm = max_ttm
-        self.allow_long = allow_long
-        self.allow_short = allow_short
         
         # Tracking
         self.greeks = {'vega': 0.0, 'theta': 0.0, 'gamma': 0.0, 'delta': 0.0}
@@ -97,10 +85,6 @@ class Agent_Straddles:
         if isinstance(date, pd.Timestamp):
             return date.normalize()
         return pd.to_datetime(date).normalize()
-
-    def _apply_tx_cost(self, cash_flow):
-        """Inflows ↓, outflows ↑ due to costs."""
-        return cash_flow * (1 - self.tx_cost) if cash_flow > 0 else cash_flow * (1 + self.tx_cost)
 
     def cal_value(self, date):
         date_norm = self._normalize_date(date)
@@ -162,7 +146,7 @@ class Agent_Straddles:
         
         # Close both legs
         opt_pnl = self.call_num * call_price + self.put_num * put_price
-        self.balance += self._apply_tx_cost(opt_pnl)
+        self.balance += opt_pnl
         
         # Reset
         self.call_num = self.put_num = 0.0
@@ -181,12 +165,17 @@ class Agent_Straddles:
         if self.ttm is not None and self.ttm < self.min_ttm:
             return True, "expiry"
         
-        # Stop-loss
-        current_val = self.cal_value(date)
-        if not np.isnan(current_val) and self.entry_value is not None:
-            pnl = current_val - self.entry_value
-            if pnl < -self.stop_loss_frac * self.entry_premium:
-                return True, f"stop-loss ({pnl/self.entry_premium:.1%})"
+        # Close when (IV - RV) < vrp_close_threshold
+        if self.vrp_close_threshold is not None and self.call_df is not None and self.put_df is not None:
+            date_norm = self._normalize_date(date)
+            und_row = self.underlying_df[self.underlying_df['Date'].dt.normalize() == date_norm]
+            cr = self.call_df[self.call_df['timestamp'].dt.normalize() == date_norm]
+            pr = self.put_df[self.put_df['timestamp'].dt.normalize() == date_norm]
+            if not und_row.empty and not cr.empty and not pr.empty:
+                RV = float(und_row['RV_30d'].iloc[0])
+                IV = (float(cr.iloc[0]['imp_vol']) + float(pr.iloc[0]['imp_vol'])) / 2
+                if (IV - RV) < self.vrp_close_threshold:
+                    return True, f"vrp_close (IV-RV={IV-RV:.4f})"
         
         return False, ""
 
@@ -239,23 +228,19 @@ class Agent_Straddles:
         action = None
         if abs(VRP) < self.vrp_threshold:
             return
-        if VRP > self.vrp_threshold and self.allow_short:
+        if VRP > self.vrp_threshold:
             action = 'short'
-        elif VRP < -self.vrp_threshold and self.allow_long:
+        elif VRP < -self.vrp_threshold:
             action = 'long'
         else:
             return
         
-        # Sizing
+        # Sizing (vega-based)
         premium = float(call_row['close']) + float(put_row['close'])
-        if self.sizing_method == 'vega' and abs(self.greeks['vega']) > 1e-6:
-            target_vega = self.total_value * self.vega_risk_frac
-            units = target_vega / self.greeks['vega']
-        else:  # 'premium' or fallback
-            risk_budget = self.total_value * self.premium_risk_frac
-            units = risk_budget / premium
-        
-        units = np.sign(units) * min(abs(units), self.max_units)
+        if abs(self.greeks['vega']) < 1e-6:
+            return
+        target_vega = self.total_value * self.vega_risk_frac
+        units = target_vega / self.greeks['vega']
         units = int(np.round(units))
         if units == 0:
             return
@@ -267,7 +252,7 @@ class Agent_Straddles:
         
         # Execute
         total_premium = units * premium
-        self.balance += self._apply_tx_cost(-total_premium)  # long: pay, short: receive
+        self.balance += -total_premium  # long: pay, short: receive
         self.call_num = units
         self.put_num = units
         self.trade_open = True
