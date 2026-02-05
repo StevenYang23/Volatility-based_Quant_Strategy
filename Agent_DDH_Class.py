@@ -73,12 +73,14 @@ def get_greeks_analytical(call_row, put_row):
 class Agent_DDH:
     def __init__(self, 
                  balance=1000.0,
-                 vega_risk_frac=0.1,         # e.g., 10% of NAV in vega
+                 max_invest=0.8,             # long: spend at most this fraction of NAV
+                 max_leverage=0.5,           # short: borrow/exposure at most this fraction of NAV
                  vrp_threshold=1.0,        # trade only if |VRP_z| > 1.0
-                 vrp_close_threshold=None,  # close when (IV - RV) < this (None = disabled)
-                 delta_rehedge_threshold=None,  # rehedge when |net_delta| > this (None = disabled)
+                 vrp_close_threshold=1.0,  # close when (IV - RV) < this (None = disabled)
+                 delta_rehedge_threshold=1e9,  # rehedge when |net_delta| > this (None = disabled)
                  min_ttm=1/252,              # close if TTM < 1 day
-                 max_ttm=60/252):            # only consider <=60 DTE
+                 max_ttm=60/252,            # only consider <=60 DTE
+                 delta_hedge=True):         # if False, underlying_num always 0 and delta_rehedge_threshold=1e9
         self.balance = float(balance)
         self.underlying_df = pd.read_csv("DataSet/underlying.csv", parse_dates=['Date'])
         # Ensure RV_30d exists; if not, compute it
@@ -95,10 +97,12 @@ class Agent_DDH:
         self.total_value = self.balance
         
         # Strategy params
-        self.vega_risk_frac = vega_risk_frac
+        self.max_invest = max_invest
+        self.max_leverage = max_leverage
         self.vrp_threshold = vrp_threshold
         self.vrp_close_threshold = vrp_close_threshold
-        self.delta_rehedge_threshold = delta_rehedge_threshold
+        self.delta_hedge = delta_hedge
+        self.delta_rehedge_threshold = (1e9 if not delta_hedge else delta_rehedge_threshold)
         self.min_ttm = min_ttm
         self.max_ttm = max_ttm
         
@@ -237,7 +241,6 @@ class Agent_DDH:
         call_rows = self.call_df[self.call_df['timestamp'].dt.normalize() == date_norm]
         put_rows = self.put_df[self.put_df['timestamp'].dt.normalize() == date_norm]
         if call_rows.empty or put_rows.empty:
-            warnings.warn(f"No option data for {date}")
             return
         
         call_row = call_rows.iloc[0].copy()
@@ -258,50 +261,59 @@ class Agent_DDH:
         
         # Greeks
         self.greeks = get_greeks_analytical(call_row, put_row)
-        if abs(self.greeks['vega']) < 1e-6:
-            return
+        delta = self.greeks['delta']
         
         # VRP signal: z-score of (IV - RV)
         port_IV = (call_row['imp_vol'] + put_row['imp_vol']) / 2
         VRP = port_IV - RV
-        
+        vrp_std = float(und_row['VRP_std'].iloc[0])
+        vrp_mean = float(und_row['VRP_mean'].iloc[0])
+        # vrp_std = 1
         # Decision
         action = None
-        if abs(VRP) < self.vrp_threshold:
-            return  # no signal
-        if VRP > self.vrp_threshold:
+        if ((VRP-vrp_mean)/vrp_std) > self.vrp_threshold:
             action = 'short'
-        elif VRP < -self.vrp_threshold:
+        elif ((VRP-vrp_mean)/vrp_std) < -self.vrp_threshold:
             action = 'long'
         else:
             return
         
-        # Vega-based sizing
-        target_vega = self.total_value * self.vega_risk_frac
-        units = target_vega / self.greeks['vega']
-        units = np.clip(units, -10, 10)  # hard cap
-        units = np.round(units)  # round to whole contracts
-        if abs(units) < 1:
+        # Sizing: max_invest (long) = spend at most 80% of NAV; max_leverage (short) = exposure at most 50% of NAV
+        premium_per_unit = float(call_row['close']) + float(put_row['close'])
+        if premium_per_unit <= 0:
+            return
+        if action == 'long':
+            # Long: total spend = premium*units + max(0, underlying_cost). underlying_num = -units*delta; cost = underlying_num*S when underlying_num>0.
+            # So cost per unit = premium_per_unit + max(0, -delta*S)
+            cost_per_unit = premium_per_unit + max(0.0, -delta * S)
+            if cost_per_unit <= 0:
+                return
+            max_units = (self.max_invest * self.total_value) / cost_per_unit
+            units = int(np.floor(max_units))
+        else:
+            # Short: exposure per unit = premium + |underlying| = premium_per_unit + |delta|*S
+            exposure_per_unit = premium_per_unit + abs(delta) * S
+            if exposure_per_unit <= 0:
+                return
+            max_units = (self.max_leverage * self.total_value) / exposure_per_unit
+            units = -int(np.floor(max_units))
+        if units == 0:
             return
         
-        if action == 'short':
-            units = -abs(units)
-        else:
-            units = abs(units)
-        
         # Premium paid/received (absolute)
-        premium_per_unit = call_row['close'] + put_row['close']
         net_premium = units * premium_per_unit
         
         # Initial hedge
         self.call_num = units
         self.put_num = units
-        self.underlying_num = -units * self.greeks['delta']  # delta-neutral init
+        self.underlying_num = int(round(-units * delta)) if self.delta_hedge else 0
         
-        # Cash flow: long → pay (negative), short → receive (positive)
+        # Cash flow: options — long → pay, short → receive
         self.balance += -net_premium
+        # Cash flow: underlying — buy → pay, short sell → receive
+        self.balance += -(self.underlying_num * S)
         
-        self.entry_value = self.balance + net_premium  # pre-trade value
+        self.entry_value = self.balance + net_premium + self.underlying_num * S  # pre-trade NAV
         self.entry_premium = abs(net_premium)
         self.trade_open = True
         self.current_call_sym = call_sym
@@ -323,7 +335,7 @@ class Agent_DDH:
         put_sym = self.current_put_sym
         if call_sym is None or put_sym is None:
             return
-        self.close_position(date, reason="rehedge")
+        # self.close_position(date, reason="rehedge")
         self.build_position(call_sym, put_sym, date)
 
     def should_exit(self, date):
@@ -344,9 +356,12 @@ class Agent_DDH:
             call_row_df = self.call_df[self.call_df['timestamp'].dt.normalize() == date_norm]
             put_row_df = self.put_df[self.put_df['timestamp'].dt.normalize() == date_norm]
             if not call_row_df.empty and not put_row_df.empty:
+                vrp_std = float(und_row['VRP_std'].iloc[0])
+                vrp_mean = float(und_row['VRP_mean'].iloc[0])
                 RV = float(und_row['RV_30d'].iloc[0])
                 IV = (float(call_row_df.iloc[0]['imp_vol']) + float(put_row_df.iloc[0]['imp_vol'])) / 2
-                if (IV - RV) < self.vrp_close_threshold:
+                VRP = IV - RV
+                if ((VRP-vrp_mean)/vrp_std) > self.vrp_close_threshold:
                     return True, f"vrp_close (IV-RV={IV-RV:.4f})"
         
         return False, ""

@@ -42,7 +42,8 @@ def get_straddle_greeks(S, K, T, r, sigma_c, sigma_p):
 class Agent_Straddles:
     def __init__(self,
                  balance=10000.0,
-                 vega_risk_frac=0.1,          # e.g., 10% NAV in vega
+                 max_invest=0.8,              # long: spend at most this fraction of NAV
+                 max_leverage=0.5,             # short: borrow at most this fraction of NAV (exposure cap)
                  vrp_threshold=1.0,
                  vrp_close_threshold=None,   # close when (IV - RV) < this (None = disabled)
                  min_ttm=1/252,
@@ -68,7 +69,8 @@ class Agent_Straddles:
         self.trade_open = False
         
         # Strategy params
-        self.vega_risk_frac = vega_risk_frac
+        self.max_invest = max_invest
+        self.max_leverage = max_leverage
         self.vrp_threshold = vrp_threshold
         self.vrp_close_threshold = vrp_close_threshold
         self.min_ttm = min_ttm
@@ -235,20 +237,20 @@ class Agent_Straddles:
         else:
             return
         
-        # Sizing (vega-based)
+        # Sizing: max_invest (long) = spend at most 80% of NAV; max_leverage (short) = exposure at most 50% of NAV
         premium = float(call_row['close']) + float(put_row['close'])
-        if abs(self.greeks['vega']) < 1e-6:
+        if premium <= 0:
             return
-        target_vega = self.total_value * self.vega_risk_frac
-        units = target_vega / self.greeks['vega']
-        units = int(np.round(units))
+        if action == 'long':
+            # Long: total spend = premium * units <= max_invest * total_value
+            max_units = (self.max_invest * self.total_value) / premium
+            units = int(np.floor(max_units))
+        else:
+            # Short: exposure = premium * |units| <= max_leverage * total_value
+            max_units = (self.max_leverage * self.total_value) / premium
+            units = -int(np.floor(max_units))
         if units == 0:
             return
-        
-        if action == 'short':
-            units = -abs(units)
-        else:
-            units = abs(units)
         
         # Execute
         total_premium = units * premium
@@ -258,7 +260,7 @@ class Agent_Straddles:
         self.trade_open = True
         self.k = K
         self.ttm = T
-        self.entry_value = self.balance + total_premium  # hypothetical pre-trade NAV
+        self.entry_value = self.balance + total_premium  # pre-trade NAV
         self.entry_premium = abs(total_premium)
         
         # print(f"[{date.date()}] {action.upper()} {abs(units)} straddle(s) @ K={K:.0f}, "
