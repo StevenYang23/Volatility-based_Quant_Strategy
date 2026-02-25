@@ -14,8 +14,8 @@ Example backtest results (from a typical run; actual numbers depend on data and 
 
 | Strategy | Sharpe Ratio | Annual Return | Annual Volatility |
 |----------|--------------|---------------|-------------------|
-| **Delta-Hedged** | ~2.14 | ~17% | ~8% |
-| **Pure Straddle** | ~0.65 | ~9% | ~14% |
+| **Delta-Hedged** | ~2.46 | ~139.83% | ~55.21% |
+| **Pure Straddle** | ~1.57 | ~166.72% | ~103.56% |
 
 ### Performance Visualization
 
@@ -35,12 +35,56 @@ The backtest results demonstrate the comparative performance of delta-hedged and
 
 ## Strategy Logic
 
-### Core Concept
-The strategy is based on the volatility risk premium (VRP), which is the difference between implied and realized volatility:
-- **VRP = IV - RV**
-- **Trading sign detection (Bollinger Bands style)**: A 20-day rolling mean and standard deviation of VRP are computed (like Bollinger Bands). The signal is the **VRP z-score**: (VRP − VRP_mean) / VRP_std. Trade when |z-score| exceeds the threshold.
-- When VRP z-score > threshold: Short straddle (sell options, collect premium)
-- When VRP z-score < −threshold: Long straddle (buy options, pay premium)
+### Bollinger Bands (VRP Bands)
+
+The strategy uses a **Bollinger-Bands-style** construction on the **Volatility Risk Premium (VRP)**:
+
+- **VRP** = IV − RV (implied volatility minus realized volatility, both in level form).
+- **VRP_mean**: 20-day rolling mean of VRP (the “middle band”).
+- **VRP_std**: 20-day rolling standard deviation of VRP.
+- **Bands**: **VRP_mean + k × VRP_std** (upper band) and **VRP_mean − k × VRP_std** (lower band), where **k** is the threshold parameter (`vrp_threshold` for entry, `vrp_close_threshold` for exit).
+
+The **z-score** is (VRP − VRP_mean) / VRP_std. When VRP is above the upper band, the z-score is high (IV rich vs history); when VRP is below the lower band, the z-score is low (IV cheap vs history). Entry and exit rules are expressed in terms of this z-score and the bands.
+
+### How the Agent Opens a Position
+
+The agent opens a position **only when the VRP z-score leaves the band** (i.e. |z-score| > `vrp_threshold`):
+
+1. **Short straddle** (sell options): When **VRP > VRP_mean + vrp_threshold × VRP_std** (z-score above the upper band).  
+   Interpretation: IV is high relative to recent VRP; the agent sells volatility (collects premium).
+
+2. **Long straddle** (buy options): When **VRP < VRP_mean − vrp_threshold × VRP_std** (z-score below the lower band).  
+   Interpretation: IV is low relative to recent VRP; the agent buys volatility (pays premium).
+
+3. **No trade**: When VRP is **inside the bands** (between the lower and upper band), the agent does not open a new position.
+
+So the “Bollinger bands” on VRP directly drive the **direction** of the trade (long vs short) and the **timing** of entry.
+
+### How the Agent Closes a Position
+
+A position is closed in any of these cases:
+
+1. **Near-expiry**: TTM &lt; min_ttm/2 (e.g. &lt; ~0.5 days). The position is closed to avoid expiration risk.
+
+2. **Roll (monthly switch)**: On the **first Tuesday of each month** (trade date), if the agent has an open position, it closes that position and may open the **next month’s option** on the same day. So the “old” option is closed on the roll date.
+
+3. **VRP close (bands):**  
+   - **Long position** (holding long straddle): Close when **VRP > VRP_mean + vrp_close_threshold × VRP_std** (VRP moves back above the upper band). Idea: IV has repriced higher; take profit or cut risk.  
+   - **Short position** (holding short straddle): Close when **VRP < VRP_mean − vrp_close_threshold × VRP_std** (VRP moves back below the lower band). Idea: IV has repriced lower; take profit or cut risk.
+
+4. **Rehedge (delta-hedged only)**: This is **not** a full close. When |net_delta| > `delta_rehedge_threshold`, the agent **only adjusts the underlying share position** (same option size). Option count is unchanged; balance is updated for the underlying buy/sell (PnL from the hedge adjustment). No new option is opened.
+
+### Long vs Short: What’s Different
+
+| Aspect | Long position | Short position |
+|--------|----------------|----------------|
+| **Entry condition** | VRP &lt; VRP_mean − k×VRP_std (below lower band) | VRP &gt; VRP_mean + k×VRP_std (above upper band) |
+| **Action at entry** | Buy straddle (pay premium), buy/sell underlying to delta-hedge | Sell straddle (receive premium), buy/sell underlying to delta-hedge |
+| **Sizing cap** | **max_invest × NAV** (max fraction of NAV spent: premium + hedge cost) | **max_leverage × NAV** (max fraction of NAV as exposure: premium + \|delta\|×S) |
+| **Close condition** | Close when VRP moves **back up** above upper band (VRP &gt; VRP_mean + k×VRP_std) | Close when VRP moves **back down** below lower band (VRP &lt; VRP_mean − k×VRP_std) |
+| **Intuition** | Buy cheap vol when VRP is low; exit when vol reprices higher | Sell rich vol when VRP is high; exit when vol reprices lower |
+
+So: **long** = enter when VRP is low (below band), exit when VRP is high (above band). **Short** = enter when VRP is high (above band), exit when VRP is low (below band). The bands define both entry and exit.
 
 ### Delta Hedging
 - **Delta-Hedged Strategy**: `Agent_DDH` with `delta_hedge=True` — hedges delta at entry and can rehedge when |net_delta| exceeds a threshold.
@@ -95,10 +139,10 @@ Volatility-based_Quant_Strategy/
 #### `Agent_DDH` (in `Agent_DDH_Class.py`)
 - Single agent used for both **delta-hedged** and **unhedged** modes via the `delta_hedge` flag.
 - **Trading signal**: VRP z-score from 20-day rolling mean and std (Bollinger Bands style). Requires `VRP_std` and `VRP_mean` in `DataSet/underlying.csv`.
-- **Delta-hedged mode** (`delta_hedge=True`): Initial delta hedge at entry; optional rehedge when |net_delta| > `delta_rehedge_threshold`.
+- **Delta-hedged mode** (`delta_hedge=True`): Initial delta hedge at entry; **rehedge** adjusts only the underlying share count (same option size) when |net_delta| > `delta_rehedge_threshold`, with PnL reflected in balance.
 - **Unhedged mode** (`delta_hedge=False`): Pure straddle, no underlying position.
 - Position sizing: long = `max_invest × NAV`; short = `max_leverage × NAV` (exposure cap).
-- Exit: near-expiry (TTM), or when VRP z-score crosses `vrp_close_threshold`.
+- Exit: near-expiry (TTM), monthly roll (first Tuesday), or VRP close (long when VRP > upper band, short when VRP < lower band). See “How the Agent Closes a Position” above.
 
 #### `Agent_Straddles` (in `Agent_Class.py`)
 - Alternative unhedged straddle agent using **raw VRP** (no z-score); does not use `VRP_std`/`VRP_mean`.
@@ -121,8 +165,9 @@ Volatility-based_Quant_Strategy/
 
 ### Risk Management
 - **Time-to-maturity**: Closes when TTM &lt; min_ttm/2 (near expiry).
-- **VRP exit**: Optional exit when VRP z-score crosses `vrp_close_threshold`.
-- **Delta rehedge** (DDH only): Rehedge when |net_delta| &gt; `delta_rehedge_threshold`.
+- **Monthly roll**: On the first Tuesday of each month, the current position is closed and the agent may open the next month’s option.
+- **VRP exit**: Long closes when VRP &gt; VRP_mean + k×VRP_std; short closes when VRP &lt; VRP_mean − k×VRP_std (k = `vrp_close_threshold`).
+- **Delta rehedge** (DDH only): When |net_delta| &gt; `delta_rehedge_threshold`, only the underlying share count is adjusted (no option close); PnL from the hedge trade is applied to balance.
 
 ### Greeks Tracking
 - **Delta**: Price sensitivity to underlying moves

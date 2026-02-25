@@ -78,7 +78,7 @@ class Agent_DDH:
                  vrp_threshold=1.0,        # trade only if |VRP_z| > 1.0
                  vrp_close_threshold=1.0,  # close when (IV - RV) < this (None = disabled)
                  delta_rehedge_threshold=1e9,  # rehedge when |net_delta| > this (None = disabled)
-                 min_ttm=1/252,              # close if TTM < 1 day
+                 min_ttm=4/252,              # close if TTM < 4 day
                  max_ttm=60/252,            # only consider <=60 DTE
                  delta_hedge=True):         # if False, underlying_num always 0 and delta_rehedge_threshold=1e9
         self.balance = float(balance)
@@ -116,6 +116,7 @@ class Agent_DDH:
         self.entry_value = None
         self.entry_premium = None
         self.trade_open = False
+        self._rehedged_on_date = None  # set when rehedge() actually closes+reopens, for backtest to record
         
     def _normalize_date(self, date):
         if date is None:
@@ -264,16 +265,18 @@ class Agent_DDH:
         delta = self.greeks['delta']
         
         # VRP signal: z-score of (IV - RV)
-        port_IV = (call_row['imp_vol'] + put_row['imp_vol']) / 2
-        VRP = port_IV - RV
+        IV = (float(call_row['imp_vol']) + float(put_row['imp_vol'])) / 2
+        RV = float(und_row['RV'].iloc[0])
+        VRP = IV - RV
+        # VRP = float(und_row['VRP'].iloc[0])
         vrp_std = float(und_row['VRP_std'].iloc[0])
         vrp_mean = float(und_row['VRP_mean'].iloc[0])
         # vrp_std = 1
         # Decision
         action = None
-        if ((VRP-vrp_mean)/vrp_std) > self.vrp_threshold:
+        if VRP > vrp_mean + (self.vrp_threshold*vrp_std):
             action = 'short'
-        elif ((VRP-vrp_mean)/vrp_std) < -self.vrp_threshold:
+        elif VRP < vrp_mean - (self.vrp_threshold*vrp_std):
             action = 'long'
         else:
             return
@@ -324,19 +327,26 @@ class Agent_DDH:
         
 
     def rehedge(self, date):
-        """If |net_delta| > delta_rehedge_threshold, close and reopen the position (same options)."""
+        """If |net_delta| > delta_rehedge_threshold, adjust underlying_num only (same options, no close). PnL from the underlying trade is reflected in balance."""
         if not self.trade_open or self.delta_rehedge_threshold is None:
             return
         self.cal_value(date)  # refresh Greeks
         net_delta = self.greeks['delta'] * self.call_num + self.underlying_num
         if abs(net_delta) <= self.delta_rehedge_threshold:
             return
-        call_sym = self.current_call_sym
-        put_sym = self.current_put_sym
-        if call_sym is None or put_sym is None:
+        date_norm = self._normalize_date(date)
+        und_row = self.underlying_df[self.underlying_df['Date'].dt.normalize() == date_norm]
+        if und_row.empty:
             return
-        # self.close_position(date, reason="rehedge")
-        self.build_position(call_sym, put_sym, date)
+        S = float(und_row['Close'].iloc[0])
+        # Target: net_delta ≈ 0 => underlying_num = -delta * call_num (rounded to integer shares)
+        target_underlying_num = int(round(-self.greeks['delta'] * self.call_num))
+        old_underlying_num = self.underlying_num
+        # PnL / cash flow: effectively sell old underlying position at S, buy new at S
+        # balance += (old_underlying_num - target_underlying_num) * S
+        self.balance += (old_underlying_num - target_underlying_num) * S
+        self.underlying_num = target_underlying_num
+        self._rehedged_on_date = date
 
     def should_exit(self, date):
         if not self.trade_open:
@@ -351,17 +361,25 @@ class Agent_DDH:
         if self.ttm is not None and self.ttm < self.min_ttm / 2:  # e.g., <0.5 days
             return True, "near-expiry"
         
-        # Close when (IV - RV) < vrp_close_threshold
+        # Close
         if self.vrp_close_threshold is not None and self.call_df is not None and self.put_df is not None:
             call_row_df = self.call_df[self.call_df['timestamp'].dt.normalize() == date_norm]
             put_row_df = self.put_df[self.put_df['timestamp'].dt.normalize() == date_norm]
             if not call_row_df.empty and not put_row_df.empty:
                 vrp_std = float(und_row['VRP_std'].iloc[0])
                 vrp_mean = float(und_row['VRP_mean'].iloc[0])
-                RV = float(und_row['RV_30d'].iloc[0])
                 IV = (float(call_row_df.iloc[0]['imp_vol']) + float(put_row_df.iloc[0]['imp_vol'])) / 2
+                RV = float(und_row['RV'].iloc[0])
                 VRP = IV - RV
-                if ((VRP-vrp_mean)/vrp_std) > self.vrp_close_threshold:
-                    return True, f"vrp_close (IV-RV={IV-RV:.4f})"
+                
+                # Determine if long or short position based on call_num sign
+                long_position = self.call_num > 0
+                if not long_position:
+                    if VRP < vrp_mean - (self.vrp_close_threshold * vrp_std):
+                        return True, f"vrp_close_long (IV-RV={VRP:.4f})"
+                else:
+                    if VRP > vrp_mean + (self.vrp_close_threshold * vrp_std):
+                        return True, f"vrp_close_short (IV-RV={VRP:.4f})"
+                
         
         return False, ""
