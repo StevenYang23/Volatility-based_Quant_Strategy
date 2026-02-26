@@ -15,21 +15,42 @@ Example backtest results (from a typical run; actual numbers depend on data and 
 
 ### Plots
 
-![Portfolio Value and Returns](demo/value_and_return_rate.png)  
-![Greeks](demo/Greeks_monitor.png)
+<img src="demo/value_and_return_rate.png" width="480" alt="Portfolio Value and Returns" />  
+<img src="demo/Greeks_monitor.png" width="480" alt="Greeks" />
 
 ## Strategy Logic
 
 ### Bollinger Bands on VRP
 
-VRP = IV − RV. We build bands from a 20-day rolling **VRP_mean** and **VRP_std**: upper = VRP_mean + k×VRP_std, lower = VRP_mean − k×VRP_std (k = `vrp_threshold` / `vrp_close_threshold`). Entry and exit use whether VRP is above the upper band, below the lower band, or between them.
+VRP = IV − RV (implied minus realized volatility). We apply Bollinger-style bands to VRP so that **when** to open or close a straddle is driven by where VRP sits relative to the bands.
 
-![VRP Bollinger Bands](demo/Bollinger_Bands.png)
-*VRP (red), VRP_mean (green), and bands VRP_mean ± k×VRP_std (blue). Markers: ▲ long entry, ▼ short entry, × close, ● rehedge.*
+#### Band construction
 
-- **Open:** Short when VRP **above** upper band; long when VRP **below** lower band; no trade inside the bands.
-- **Close:** Long closes when VRP moves **back above** upper band; short closes when VRP moves **back below** lower band. Also: near-expiry (TTM &lt; min_ttm/2), and monthly roll (first Tuesday — close current option, can open next month’s). Rehedge (DDH only) only adjusts underlying shares; no option close.
-- **Long vs short:** Long = pay premium, cap by `max_invest×NAV`. Short = receive premium, cap by `max_leverage×NAV`.
+| Item | Definition |
+|------|------------|
+| **VRP** | IV − RV (time series, one value per day) |
+| **VRP_mean** | 20-day rolling mean of VRP |
+| **VRP_std** | 20-day rolling standard deviation of VRP |
+| **Band width (k)** | Entry: `vrp_threshold`; close: `vrp_close_threshold` (can differ by agent) |
+| **Upper band** | VRP_mean + k × VRP_std |
+| **Lower band** | VRP_mean − k × VRP_std |
+
+So: upper = VRP_mean + k×VRP_std, lower = VRP_mean − k×VRP_std. VRP above the upper band is “expensive” volatility; below the lower band is “cheap” volatility.
+
+#### Trading rules (VRP vs bands)
+
+| Condition | Action |
+|-----------|--------|
+| VRP **above** upper band | Open **short** straddle (sell volatility) or close a **long** |
+| VRP **below** lower band | Open **long** straddle (buy volatility) or close a **short** |
+| VRP **between** the bands | No new entry; existing position can be closed by other rules |
+
+Additional close triggers: near-expiry (TTM &lt; min_ttm/2), monthly roll (first Tuesday — close current option, can open next month’s). Rehedge (delta-hedged agent only) adjusts underlying shares only; it does not close the option.
+
+<img src="demo/Bollinger_Bands.png" width="480" alt="VRP Bollinger Bands" />  
+*VRP (red), VRP_mean (green), bands VRP_mean ± k×VRP_std (blue). Markers: ▲ long entry, ▼ short entry, × close, ● rehedge.*
+
+- **Long vs short sizing:** Long = pay premium, cap by `max_invest×NAV`. Short = receive premium, cap by `max_leverage×NAV`.
 
 ### Delta Hedging & Sizing
 
@@ -75,17 +96,23 @@ The notebook uses the following (match your run for reproducibility):
 agent_ddh = Agent_DDH(
     balance=5000.0,
     max_invest=0.75,
-    max_leverage=0.5,
-    vrp_threshold=0.75,           # VRP z-score threshold for entry
-    vrp_close_threshold=0.75,     # VRP z-score for exit
-    delta_rehedge_threshold=10,   # Rehedge when |net_delta| > 10
-    delta_hedge=True,
+    max_leverage=0.75,
+    vrp_threshold=0.65,
+    vrp_close_threshold=0.0,
+    delta_rehedge_threshold=200,
 )
 ```
 
 #### Pure Straddle Agent
 ```python
-agent_straddle = Agent_DDH(balance=5000.0, max_invest=0.75, max_leverage=0.75, vrp_threshold=0.75, vrp_close_threshold=0.75, delta_hedge=False)
+agent_straddle = Agent_DDH(
+    balance=5000.0,
+    max_invest=0.75,
+    max_leverage=0,
+    vrp_threshold=0.0,
+    vrp_close_threshold=0.35,
+    delta_hedge=False,
+)
 ```
 
 ## Metrics & Data
