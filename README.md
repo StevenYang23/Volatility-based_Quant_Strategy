@@ -118,8 +118,8 @@ agent_straddle = Agent_DDH(
     balance=5000.0,
     max_invest=0.75,
     max_leverage=0,
-    vrp_threshold=0.0,
-    vrp_close_threshold=0.35,
+    vrp_threshold=0.65,
+    vrp_close_threshold=0.0,
     delta_hedge=False,
 )
 ```
