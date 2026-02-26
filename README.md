@@ -8,10 +8,10 @@ VRP (IV − RV) strategy: Bollinger-style bands on VRP drive **when** to go long
 
 Example backtest results (from a typical run; actual numbers depend on data and parameters):
 
-| Strategy | Sharpe Ratio | Annual Return | Annual Volatility |
-|----------|--------------|---------------|-------------------|
-| **Delta-Hedged** | ~2.46 | ~139.83% | ~55.21% |
-| **Pure Straddle** | ~2.15 | ~161.38% | ~73.03.56% |
+| Strategy | Sharpe Ratio | Sortino Ratio | Annual Return | Annual Volatility | Max Drawdown | Calmar Ratio |
+|----------|--------------|---------------|---------------|-------------------|--------------|--------------|
+| **Delta-Hedged** | 2.56 | 2.59 | 125.02% | 47.21% | 7.17% | 17.44 |
+| **Pure Straddle** | 4.19 | 5.63 | 311.35% | 73.36% | 14.59% | 21.35 |
 
 ### Plots
 
@@ -105,7 +105,7 @@ The notebook uses the following (match your run for reproducibility):
 agent_ddh = Agent_DDH(
     balance=5000.0,
     max_invest=0.75,
-    max_leverage=0.75,
+    max_leverage=0.35,
     vrp_threshold=0.65,
     vrp_close_threshold=0.0,
     delta_rehedge_threshold=200,
@@ -117,7 +117,7 @@ agent_ddh = Agent_DDH(
 agent_straddle = Agent_DDH(
     balance=5000.0,
     max_invest=0.75,
-    max_leverage=0,
+    max_leverage=0.35,
     vrp_threshold=0.65,
     vrp_close_threshold=0.0,
     delta_hedge=False,
@@ -126,7 +126,7 @@ agent_straddle = Agent_DDH(
 
 ## Metrics & Data
 
-- **Metrics:** Final NAV, total return, Sharpe (CAGR-based), annual vol, max drawdown.
+- **Metrics:** Final NAV, total return, Sharpe ratio, Sortino ratio, annual vol, max drawdown, Calmar ratio.
 - **Dependencies:** pandas, numpy, scipy, matplotlib, yfinance, polygon-api-client.
 - **Data:** `underlying.csv` needs Date, Close, Return, RV, imp_vol, VRP, VRP_std, VRP_mean. Options in `O_*.csv`; lists in `call_list.pkl`, `put_list.pkl`; dates in `dates.pkl`, `date_strs.pkl`. Trade schedule: first Tuesday; options ATM, expire second Friday next month.
 
