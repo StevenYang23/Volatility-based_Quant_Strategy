@@ -11,7 +11,7 @@ Example backtest results (from a typical run; actual numbers depend on data and 
 | Strategy | Sharpe Ratio | Annual Return | Annual Volatility |
 |----------|--------------|---------------|-------------------|
 | **Delta-Hedged** | ~2.46 | ~139.83% | ~55.21% |
-| **Pure Straddle** | ~1.57 | ~166.72% | ~103.56% |
+| **Pure Straddle** | ~2.15 | ~161.38% | ~73.03.56% |
 
 ### Plots
 
