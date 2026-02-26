@@ -236,7 +236,6 @@ class Agent_DDH:
             warnings.warn(f"No underlying data for {date}")
             return
         S = float(und_row['Close'].iloc[0])
-        RV = float(und_row['RV_30d'].iloc[0])  # horizon-matched!
         
         # Get option data
         call_rows = self.call_df[self.call_df['timestamp'].dt.normalize() == date_norm]
@@ -342,9 +341,9 @@ class Agent_DDH:
         # Target: net_delta ≈ 0 => underlying_num = -delta * call_num (rounded to integer shares)
         target_underlying_num = int(round(-self.greeks['delta'] * self.call_num))
         old_underlying_num = self.underlying_num
-        # PnL / cash flow: effectively sell old underlying position at S, buy new at S
-        # balance += (old_underlying_num - target_underlying_num) * S
-        self.balance += (old_underlying_num - target_underlying_num) * S
+        # Re-hedge trade cash flow: buy shares -> cash decreases; sell shares -> cash increases.
+        shares_to_trade = target_underlying_num - old_underlying_num
+        self.balance -= shares_to_trade * S
         self.underlying_num = target_underlying_num
         self._rehedged_on_date = date
 
@@ -372,13 +371,15 @@ class Agent_DDH:
                 RV = float(und_row['RV'].iloc[0])
                 VRP = IV - RV
                 
-                # Determine if long or short position based on call_num sign
+                # Determine if long or short position based on call_num sign.
+                # Long straddle should be closed when VRP rises above the upper band;
+                # short straddle should be closed when VRP falls below the lower band.
                 long_position = self.call_num > 0
-                if not long_position:
-                    if VRP < vrp_mean - (self.vrp_close_threshold * vrp_std):
+                if long_position:
+                    if VRP > vrp_mean + (self.vrp_close_threshold * vrp_std):
                         return True, f"vrp_close_long (IV-RV={VRP:.4f})"
                 else:
-                    if VRP > vrp_mean + (self.vrp_close_threshold * vrp_std):
+                    if VRP < vrp_mean - (self.vrp_close_threshold * vrp_std):
                         return True, f"vrp_close_short (IV-RV={VRP:.4f})"
                 
         
