@@ -15,8 +15,8 @@ Example backtest results (from a typical run; actual numbers depend on data and 
 
 ### Plots
 
-<img src="demo/value_and_return_rate.png" width="480" alt="Portfolio Value and Returns" />  
-<img src="demo/Greeks_monitor.png" width="480" alt="Greeks" />
+<p style="text-align: center"><img src="demo/value_and_return_rate.png" width="624" alt="Portfolio Value and Returns" style="display: block; margin-left: auto; margin-right: auto;" /></p>  
+<p style="text-align: center"><img src="demo/Greeks_monitor.png" width="624" alt="Greeks" style="display: block; margin-left: auto; margin-right: auto;" /></p>
 
 ## Strategy Logic
 
@@ -45,9 +45,18 @@ So: upper = VRP_mean + k×VRP_std, lower = VRP_mean − k×VRP_std. VRP above th
 | VRP **below** lower band | Open **long** straddle (buy volatility) or close a **short** |
 | VRP **between** the bands | No new entry; existing position can be closed by other rules |
 
-Additional close triggers: near-expiry (TTM &lt; min_ttm/2), monthly roll (first Tuesday — close current option, can open next month’s). Rehedge (delta-hedged agent only) adjusts underlying shares only; it does not close the option.
+#### Closing position logic
 
-<img src="demo/Bollinger_Bands.png" width="480" alt="VRP Bollinger Bands" />  
+A position is closed when any of the following conditions is met. (Rehedge only adjusts the underlying hedge; it does **not** close the option.)
+
+| Trigger | Condition | Effect |
+|---------|-----------|--------|
+| **VRP close (long)** | VRP moves **below** lower band (VRP &lt; VRP_mean − k×VRP_std, k = `vrp_close_threshold`) | Close long straddle; can open short on same day if VRP above upper band |
+| **VRP close (short)** | VRP moves **above** upper band (VRP &gt; VRP_mean + k×VRP_std) | Close short straddle; can open long on same day if VRP below lower band |
+| **Near-expiry** | Time to maturity &lt; `min_ttm`/2 (e.g. &lt; ~2 days when `min_ttm` = 4/252) | Close current option to avoid holding into expiry |
+| **Monthly roll** | Roll date (e.g. first Tuesday): switch to next option cycle | Close current option; backtest may open next month’s straddle on the same or next date |
+
+<p style="text-align: center"><img src="demo/Bollinger_Bands.png" width="624" alt="VRP Bollinger Bands" style="display: block; margin-left: auto; margin-right: auto;" /></p>  
 *VRP (red), VRP_mean (green), bands VRP_mean ± k×VRP_std (blue). Markers: ▲ long entry, ▼ short entry, × close, ● rehedge.*
 
 - **Long vs short sizing:** Long = pay premium, cap by `max_invest×NAV`. Short = receive premium, cap by `max_leverage×NAV`.
