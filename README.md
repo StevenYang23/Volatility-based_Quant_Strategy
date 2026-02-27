@@ -82,6 +82,9 @@ Volatility-based_Quant_Strategy/
 │   ├── dates.pkl              # Trading dates
 │   ├── date_strs.pkl          # Trading dates (string format)
 │   └── O_*.csv                # Individual option contract data
+├── logs/                       # Trade logs (written by Back_test.ipynb)
+│   ├── agent_ddh_trade_log.csv    # Delta-hedged agent: every trade event
+│   └── agent_straddle_trade_log.csv # Pure straddle agent: every trade event
 └── demo/                       # Visualization outputs
 ```
 
@@ -89,12 +92,33 @@ Volatility-based_Quant_Strategy/
 
 - **Build_data.ipynb:** Underlying (yfinance), 20d RV, first-Tuesday trade dates, ATM options (second Friday next month), Polygon option data, IV/VRP/VRP_mean/VRP_std → `DataSet/underlying.csv`, `call_list.pkl`, `put_list.pkl`, `O_*.csv`.
 - **Agent_DDH** (`Agent_DDH_Class.py`): VRP bands for entry/exit; `delta_hedge=True` (hedge + rehedge by underlying only) or `False` (pure straddle). Sizing: long `max_invest×NAV`, short `max_leverage×NAV`. Exit: near-expiry, roll, VRP close (long above band, short below band).
-- **Back_test.ipynb:** Runs both agents, records NAV/Greeks/events, Sharpe/CAGR/vol/drawdown, plots.
+- **Back_test.ipynb:** Runs both agents, records NAV/Greeks/events, Sharpe/CAGR/vol/drawdown, plots, and writes trade logs to `logs/`.
+
+## Log feature (trade logs)
+
+After each backtest run, **Back_test.ipynb** writes CSV trade logs under the `logs/` directory so you can audit every entry, exit, roll, and (for the delta-hedged agent) rehedge.
+
+| File | Description |
+|------|-------------|
+| `logs/agent_ddh_trade_log.csv` | Delta-hedged agent: every trade event (Long, Short, Close, Roll, Rehedge) |
+| `logs/agent_straddle_trade_log.csv` | Pure straddle agent: every trade event (Long, Short, Close, Roll) |
+
+Each log row corresponds to one explicit trade event. Columns:
+
+| Column | Meaning |
+|--------|--------|
+| **Date** | Date of the event |
+| **Action** | `Long`, `Short`, `Close`, `Roll`, or `Rehedge` (DDH only) |
+| **CallSymbol** | Option contract symbol (e.g. `O_AAPL240412C00170000`) |
+| **NumOptions** | Number of options (signed: negative for short) |
+| **NumUnderlying** | Delta-hedge quantity (underlying shares); 0 for pure straddle or non-hedge events |
+
+The `logs/` folder is created automatically if it does not exist. Use these files for reconciliation, debugging, or downstream analysis of trade timing and sizing.
 
 ## Usage
 
 1. Run **Build_data.ipynb** → `underlying.csv`, option lists, `O_*.csv`.
-2. Run **Back_test.ipynb** → metrics and demo plots.
+2. Run **Back_test.ipynb** → metrics, demo plots, and trade logs in `logs/` (see [Log feature](#log-feature-trade-logs)).
 
 ### Configuration
 
