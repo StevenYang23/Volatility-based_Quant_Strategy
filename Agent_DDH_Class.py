@@ -26,7 +26,14 @@ def bs_put_price(S, K, T, r, sigma):
 # Analytical Greeks (preferred — accurate & fast)
 def get_greeks_analytical(call_row, put_row):
     if call_row['ttm'] <= 1e-8:
-        return {'delta': 0.0, 'gamma': 0.0, 'vega': 0.0, 'theta': 0.0}
+        return {
+            'delta': 0.0,
+            'gamma': 0.0,
+            'vega': 0.0,
+            'theta': 0.0,
+            'vanna': 0.0,
+            'volga': 0.0,
+        }
     
     S = call_row['S']
     K = call_row['k']
@@ -38,6 +45,9 @@ def get_greeks_analytical(call_row, put_row):
     # d1 for call and put (same K,T,r,S)
     d1_c = d1(S, K, T, r, sigma_c)
     d1_p = d1(S, K, T, r, sigma_p)
+    sqrtT = np.sqrt(max(T, 1e-12))
+    d2_c = d1_c - sigma_c * sqrtT
+    d2_p = d1_p - sigma_p * sqrtT
     
     # Delta
     delta_c = norm.cdf(d1_c)
@@ -47,27 +57,41 @@ def get_greeks_analytical(call_row, put_row):
     # Gamma
     n_c = norm.pdf(d1_c)
     n_p = norm.pdf(d1_p)
-    gamma_c = n_c / (S * sigma_c * np.sqrt(max(T, 1e-12)))
-    gamma_p = n_p / (S * sigma_p * np.sqrt(max(T, 1e-12)))
+    gamma_c = n_c / (S * sigma_c * sqrtT)
+    gamma_p = n_p / (S * sigma_p * sqrtT)
     gamma = gamma_c + gamma_p
     
     # Vega (per 1.0 vol, not 1%)
-    vega_c = S * n_c * np.sqrt(max(T, 1e-12))
-    vega_p = S * n_p * np.sqrt(max(T, 1e-12))
+    vega_c = S * n_c * sqrtT
+    vega_p = S * n_p * sqrtT
     vega = vega_c + vega_p
+
+    # Vanna and Volga (cross and second vol derivatives of price)
+    # Use formulas consistent with the above Vega definition.
+    denom_c = max(sigma_c * sqrtT * S, 1e-12)
+    denom_p = max(sigma_p * sqrtT * S, 1e-12)
+    vanna_c = -vega_c * d2_c / denom_c
+    vanna_p = -vega_p * d2_p / denom_p
+    vanna = vanna_c + vanna_p
+
+    volga_c = vega_c * d1_c * d2_c / max(sigma_c, 1e-12)
+    volga_p = vega_p * d1_p * d2_p / max(sigma_p, 1e-12)
+    volga = volga_c + volga_p
     
     # Theta (approx, per year — convert to per day if needed)
     # Call theta
-    theta_c = (-S * n_c * sigma_c) / (2 * np.sqrt(max(T, 1e-12))) - r * K * np.exp(-r * T) * norm.cdf(d1_c - sigma_c * np.sqrt(T))
+    theta_c = (-S * n_c * sigma_c) / (2 * sqrtT) - r * K * np.exp(-r * T) * norm.cdf(d1_c - sigma_c * sqrtT)
     # Put theta
-    theta_p = (-S * n_p * sigma_p) / (2 * np.sqrt(max(T, 1e-12))) + r * K * np.exp(-r * T) * norm.cdf(-d1_p + sigma_p * np.sqrt(T))
+    theta_p = (-S * n_p * sigma_p) / (2 * sqrtT) + r * K * np.exp(-r * T) * norm.cdf(-d1_p + sigma_p * sqrtT)
     theta = theta_c + theta_p  # per year; divide by 252 for daily
     
     return {
         'delta': delta,
         'gamma': gamma,
         'vega': vega,
-        'theta': theta
+        'theta': theta,
+        'vanna': vanna,
+        'volga': volga,
     }
 
 class Agent_DDH:
@@ -107,7 +131,14 @@ class Agent_DDH:
         self.max_ttm = max_ttm
         
         # State tracking
-        self.greeks = {'delta': 0.0, 'gamma': 0.0, 'vega': 0.0, 'theta': 0.0}
+        self.greeks = {
+            'delta': 0.0,
+            'gamma': 0.0,
+            'vega': 0.0,
+            'theta': 0.0,
+            'vanna': 0.0,
+            'volga': 0.0,
+        }
         self.current_call_sym = None  # for rehedge: close and reopen same options
         self.current_put_sym = None
         self.k = None
@@ -209,7 +240,14 @@ class Agent_DDH:
         self.underlying_num = 0.0
         self.call_df = None
         self.put_df = None
-        self.greeks = {'delta': 0.0, 'gamma': 0.0, 'vega': 0.0, 'theta': 0.0}
+        self.greeks = {
+            'delta': 0.0,
+            'gamma': 0.0,
+            'vega': 0.0,
+            'theta': 0.0,
+            'vanna': 0.0,
+            'volga': 0.0,
+        }
         self.current_call_sym = None
         self.current_put_sym = None
         self.trade_open = False
