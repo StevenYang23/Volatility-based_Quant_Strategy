@@ -16,7 +16,7 @@ Example backtest results (from a typical run; actual numbers depend on data and 
 ### Plots
 
 <p style="text-align: center"><img src="demo/value_and_return_rate.png" width="624" alt="Portfolio Value and Returns" style="display: block; margin-left: auto; margin-right: auto;" /></p>  
-<p style="text-align: center"><img src="demo/Greeks_monitor.png" width="624" alt="Greeks Monitor and Attribution" style="display: block; margin-left: auto; margin-right: auto;" /></p>  
+<p style="text-align: center"><img src="demo/Greeks_monitor.png" alt="Greeks Monitor and Attribution" style="display: block; margin-left: auto; margin-right: auto;" /></p>  
 *Left: portfolio Greeks over time (Delta, Gamma, Vega, Theta, Vanna, Volga). Right: Greeks PnL attribution (cumulative contributions and pie charts by Greek).*
 
 
