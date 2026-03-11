@@ -61,12 +61,14 @@ def get_greeks_analytical(call_row, put_row):
     gamma_p = n_p / (S * sigma_p * sqrtT)
     gamma = gamma_c + gamma_p
     
-    # Vega (per 1.0 vol, not 1%)
+    # Vega: ∂Price/∂σ with σ in DECIMAL (e.g. 0.25 = 25%). Per 1 decimal point of vol.
+    # For attribution use dσ in decimal (e.g. IV 0.25→0.26 ⇒ dσ=0.01). If your data has IV
+    # in percent (25→26), convert to decimal (dσ=0.01) before Vega*dσ.
     vega_c = S * n_c * sqrtT
     vega_p = S * n_p * sqrtT
     vega = vega_c + vega_p
 
-    # Vanna and Volga (cross and second vol derivatives of price)
+    # Vanna (∂²P/∂S∂σ) and Volga (∂²P/∂σ²): same scaling as Vega — σ and dσ in decimal.
     # Use formulas consistent with the above Vega definition.
     denom_c = max(sigma_c * sqrtT * S, 1e-12)
     denom_p = max(sigma_p * sqrtT * S, 1e-12)
@@ -78,12 +80,13 @@ def get_greeks_analytical(call_row, put_row):
     volga_p = vega_p * d1_p * d2_p / max(sigma_p, 1e-12)
     volga = volga_c + volga_p
     
-    # Theta (approx, per year — convert to per day if needed)
+    # Theta: per calendar year. For daily P&L use Theta/252 (trading days) or Theta/365 (calendar).
+    # Use one convention consistently in attribution (e.g. dt_theta=1 with daily theta = Theta/252).
     # Call theta
     theta_c = (-S * n_c * sigma_c) / (2 * sqrtT) - r * K * np.exp(-r * T) * norm.cdf(d1_c - sigma_c * sqrtT)
     # Put theta
     theta_p = (-S * n_p * sigma_p) / (2 * sqrtT) + r * K * np.exp(-r * T) * norm.cdf(-d1_p + sigma_p * sqrtT)
-    theta = theta_c + theta_p  # per year; divide by 252 for daily
+    theta = theta_c + theta_p  # per year; divide by 252 for per-trading-day theta
     
     return {
         'delta': delta,
@@ -119,6 +122,7 @@ class Agent_DDH:
         self.put_num = 0.0
         self.underlying_num = 0.0
         self.total_value = self.balance
+        self.option_value = 0.0  # options-only mark-to-market (for Greeks attribution vs total NAV)
         
         # Strategy params
         self.max_invest = max_invest
@@ -161,6 +165,7 @@ class Agent_DDH:
         und_row = self.underlying_df[self.underlying_df['Date'].dt.normalize() == date_norm]
         if und_row.empty:
             self.total_value = np.nan
+            self.option_value = 0.0
             return np.nan
         S = float(und_row['Close'].iloc[0])
         
@@ -175,10 +180,11 @@ class Agent_DDH:
             if not put_row.empty:
                 put_price = float(put_row.iloc[0]['close'])
         
+        # Options-only value (for Greeks attribution: residual = Δoption_value - Greeks_approx)
+        self.option_value = self.call_num * call_price + self.put_num * put_price
         # Portfolio value: cash + options + underlying
         self.total_value = (self.balance +
-                            self.call_num * call_price +
-                            self.put_num * put_price +
+                            self.option_value +
                             self.underlying_num * S)
         
         # Calculate Greeks every timestep if position is open
