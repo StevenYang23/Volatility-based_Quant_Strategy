@@ -16,7 +16,9 @@ Example backtest results (from a typical run; actual numbers depend on data and 
 ### Plots
 
 <p style="text-align: center"><img src="demo/value_and_return_rate.png" width="624" alt="Portfolio Value and Returns" style="display: block; margin-left: auto; margin-right: auto;" /></p>  
-<p style="text-align: center"><img src="demo/Greeks_monitor.png" width="624" alt="Greeks" style="display: block; margin-left: auto; margin-right: auto;" /></p>
+<p style="text-align: center"><img src="demo/Greeks_monitor.png" width="624" alt="Greeks Monitor and Attribution" style="display: block; margin-left: auto; margin-right: auto;" /></p>  
+*Left: portfolio Greeks over time (Delta, Gamma, Vega, Theta, Vanna, Volga). Right: Greeks PnL attribution (cumulative contributions and pie charts by Greek).*
+
 
 ## Strategy Logic
 
@@ -66,6 +68,21 @@ A position is closed when any of the following conditions is met. (Rehedge only 
 - **Delta-hedged:** Hedge at entry; rehedge by adjusting underlying only when |net_delta| &gt; threshold (PnL in balance). **Pure straddle:** no underlying.
 - **Sizing:** Long = floor((max_invest×NAV) / cost_per_unit); short = −floor((max_leverage×NAV) / exposure_per_unit). Cost/exposure include premium and delta hedge terms.
 
+### Greeks & PnL Attribution
+
+The strategy tracks **six Greeks** (Black–Scholes analytical, per straddle then scaled by position size):
+
+| Greek | Description |
+|-------|-------------|
+| **Delta** | Sensitivity of option value to underlying price |
+| **Gamma** | Rate of change of delta |
+| **Vega** | Sensitivity to implied volatility |
+| **Theta** | Time decay |
+| **Vanna** | Sensitivity of delta to volatility (∂Δ/∂σ) |
+| **Volga** | Second-order vega / sensitivity of vega to volatility (vomma) |
+
+**Greeks PnL attribution** decomposes the change in option value into contributions from each Greek (e.g. Δ × dS for delta, Γ/2 × (dS)² for gamma, ν × dσ for vega, Θ × dt for theta, Vanna × dS×dσ, Volga/2 × (dσ)²) plus a residual. The backtest plot **Greeks monitor** shows portfolio Greeks time series (left) and attribution pie charts for both delta-hedged and pure-straddle strategies (right).
+
 ## Project Structure
 
 ```
@@ -91,8 +108,8 @@ Volatility-based_Quant_Strategy/
 ## Key Components
 
 - **Build_data.ipynb:** Underlying (yfinance), 20d RV, first-Tuesday trade dates, ATM options (second Friday next month), Polygon option data, IV/VRP/VRP_mean/VRP_std → `DataSet/underlying.csv`, `call_list.pkl`, `put_list.pkl`, `O_*.csv`.
-- **Agent_DDH** (`Agent_DDH_Class.py`): VRP bands for entry/exit; `delta_hedge=True` (hedge + rehedge by underlying only) or `False` (pure straddle). Sizing: long `max_invest×NAV`, short `max_leverage×NAV`. Exit: near-expiry, roll, VRP close (long above band, short below band).
-- **Back_test.ipynb:** Runs both agents, records NAV/Greeks/events, Sharpe/CAGR/vol/drawdown, plots, and writes trade logs to `logs/`.
+- **Agent_DDH** (`Agent_DDH_Class.py`): VRP bands for entry/exit; `delta_hedge=True` (hedge + rehedge by underlying only) or `False` (pure straddle). Tracks six Greeks (delta, gamma, vega, theta, vanna, volga) and option mark-to-market for attribution. Sizing: long `max_invest×NAV`, short `max_leverage×NAV`. Exit: near-expiry, roll, VRP close (long above band, short below band).
+- **Back_test.ipynb:** Runs both agents, records NAV, all six Greeks (including Vanna and Volga), Greeks PnL attribution, events, Sharpe/CAGR/vol/drawdown, plots (including the **Greeks monitor** with attribution), and writes trade logs to `logs/`.
 
 ## Log feature (trade logs)
 
