@@ -1,5 +1,6 @@
 import numpy as np
 import pandas as pd
+from pathlib import Path
 
 
 class Agent_Percentile:
@@ -48,6 +49,27 @@ class Agent_Percentile:
         self.position_state_for_pnl = []
         self.vrp_history = []  # all valid VRP values the agent has seen
         self.vrp_zscore_history = []  # z-scores built from seen VRP history
+        self._init_trade_log()
+
+    def _init_trade_log(self):
+        logs_dir = Path(__file__).resolve().parent / "logs"
+        logs_dir.mkdir(parents=True, exist_ok=True)
+        self.log_path = logs_dir / f"{self.display_name}_log.csv"
+        if not self.log_path.exists():
+            pd.DataFrame(columns=["Date", "Transaction", "Earned"]).to_csv(self.log_path, index=False)
+
+    def _current_pnl_for_log(self):
+        return float(self.PnL[-1]) if len(self.PnL) > 0 else 0.0
+
+    def _log_transaction(self, data, transaction, earned=None):
+        ts = pd.to_datetime(data.get("Date", pd.NaT), errors="coerce")
+        date_str = ts.strftime("%Y-%m-%d") if pd.notna(ts) else ""
+        row = {
+            "Date": date_str,
+            "Transaction": transaction,
+            "Earned": float(self._current_pnl_for_log() if earned is None else earned),
+        }
+        pd.DataFrame([row]).to_csv(self.log_path, mode="a", header=False, index=False)
 
     @staticmethod
     def dataset_greek_sign_sanity(data: pd.DataFrame):
@@ -155,7 +177,7 @@ class Agent_Percentile:
         self._compute_daily_pnl(data)
 
         if data["Force_Close"]:
-            self.close_position()
+            self.close_position(data)
             vrp_fc = data["VRP"]
             if pd.notna(vrp_fc):
                 vrp_fc = float(vrp_fc)
@@ -209,11 +231,11 @@ class Agent_Percentile:
         elif self.num_options == 1:
             # Close long when signal mean-reverts toward center.
             if curr_z >= mid_th:
-                self.close_position()
+                self.close_position(data)
         elif self.num_options == -1:
             # Close short when signal mean-reverts toward center.
             if curr_z <= mid_th:
-                self.close_position()
+                self.close_position(data)
 
         if self.num_options != 0 and self.delta_hedge:
             self.rehedge(data)
@@ -227,22 +249,28 @@ class Agent_Percentile:
         self.entry_straddle_price = data["Call_Close"] + data["Put_Close"]
         if self.delta_hedge:
             self.num_underlying = -data["Straddle_Delta"]
+        self._log_transaction(data, "long")
 
     def short_position(self, data):
         self.num_options = -1
         self.entry_straddle_price = data["Call_Close"] + data["Put_Close"]
         if self.delta_hedge:
             self.num_underlying = data["Straddle_Delta"]
+        self._log_transaction(data, "short")
 
-    def close_position(self):
+    def close_position(self, data=None):
+        was_open = self.num_options != 0
         self.num_options = 0
         self.num_underlying = 0
         self.entry_straddle_price = 0.0
+        if was_open and data is not None:
+            self._log_transaction(data, "close")
 
     def rehedge(self, data):
         net_delta = self.num_options * data["Straddle_Delta"] + self.num_underlying
         if abs(net_delta) > self.rehedge_threshold:
             self.num_underlying = -self.num_options * data["Straddle_Delta"]
+            self._log_transaction(data, "rehedge")
 
     def get_result(self):
         """

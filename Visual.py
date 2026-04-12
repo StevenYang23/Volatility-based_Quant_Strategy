@@ -187,7 +187,7 @@ def Visuallize_Result(Data, Agents):
     )
     ax3.axhline(0.0, color="gray", linewidth=0.9, alpha=0.7)
     ax3.set_title("VRP Signal (Level, Mean, and +/- 1 Std)", fontsize=15)
-    ax3.set_ylabel("Volatility Spread", fontsize=15)
+    ax3.set_ylabel("ZScore(VRP)", fontsize=15)
     ax3.tick_params(axis="both", labelsize=13)
     ax3.grid(alpha=0.30)
     ax3.legend(loc="upper left", fontsize=11, ncol=2, framealpha=0.92)
@@ -391,7 +391,8 @@ def Greeks_Attribution_Pie(Data, Agents):
     colors = ["#1f77b4", "#9bb2d1", "#ff7f0e", "#f1b97a", "#2ca02c", "#98df8a", "#d62728"]
 
     n_agents = len(agent_results)
-    ncols = 2 if n_agents <= 2 else 3
+    # Keep a consistent 2-column layout (two subplots per row).
+    ncols = 1 if n_agents == 1 else 2
     nrows = int(np.ceil(n_agents / ncols))
     fig, axes = plt.subplots(
         nrows,
@@ -421,28 +422,16 @@ def Greeks_Attribution_Pie(Data, Agents):
         pct_signed = vals / total_abs * 100.0
         pct_labels = [f"{x:+.1f}%" for x in pct_signed]
 
-        _idx = {"k": 0}
-
-        def _autopct(_):
-            text = pct_labels[_idx["k"]]
-            _idx["k"] += 1
-            return text
-
-        wedges, _texts, autotexts = ax.pie(
+        wedges, _texts = ax.pie(
             sizes,
             labels=None,
             colors=colors,
             startangle=90,
-            autopct=_autopct,
-            pctdistance=0.72,
             textprops={"fontsize": 13},
         )
-        for t in autotexts:
-            t.set_color("black")
-            t.set_fontweight("bold")
 
-        # Place component labels near slices with simple collision avoidance.
-        labels = [g.capitalize() for g in greek_names]
+        # Place component labels + signed percentages near slices with collision avoidance.
+        labels = [f"{g.capitalize()} {p}" for g, p in zip(greek_names, pct_labels)]
         label_points = []
         for wedge, lbl in zip(wedges, labels):
             ang = 0.5 * (wedge.theta1 + wedge.theta2)
@@ -451,7 +440,7 @@ def Greeks_Attribution_Pie(Data, Agents):
             side = "right" if x >= 0 else "left"
             label_points.append({"x": x, "y": y, "side": side, "label": lbl})
 
-        def _spread(points, min_gap=0.12):
+        def _spread(points, min_gap=0.14):
             points_sorted = sorted(points, key=lambda p: p["y"])
             last_y = -10.0
             for p in points_sorted:
