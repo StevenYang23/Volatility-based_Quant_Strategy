@@ -14,21 +14,14 @@ During the holding period, the strategy dynamically hedges its directional expos
 
 The codebase supports multiple signal-generating agents that can be run concurrently in a backtest. Each agent inherits the same execution, PnL, and Greek attribution framework but uses a distinct entry/exit logic.
 
-### 1. `Agent_hardThreshold`
-- **Parameters:** `k` (threshold multiplier), `allow_short`, `delta_hedge`, `rehedge_threshold`
-- **Signal Logic:** Uses the Z-score of the Volatility Risk Premium (VRP). It shorts the straddle when the current VRP exceeds the 20-day rolling mean plus `k * std`. It goes long when VRP falls below the rolling mean minus `k * std`. Positions are closed when the VRP reverts to the mean.
+| Agent | Long Condition (Buy Volatility) | Short Condition (Sell Volatility) | Close Condition (Exit Position) |
+| :--- | :--- | :--- | :--- |
+| **`Agent_hardThreshold`**<br>*(k=1)* | `VRP < 20d_Mean - k * 20d_Std` | `VRP > 20d_Mean + k * 20d_Std` | `VRP` crosses `20d_Mean` |
+| **`Agent_Percentile`**<br>*(low=0.20, high=0.80)* | `Z-Score(VRP)` < historical 20th percentile | `Z-Score(VRP)` > historical 80th percentile | `Z-Score(VRP)` crosses historical median |
+| **`Agent_2threshold`**<br>*(k_high=1.2, k_low=0.8)* | `VRP < 20d_Mean - k_active * 20d_Std`<br>*(`k_active` is `k_high` if 40d_Std > 20d_Std, else `k_low`)* | `VRP > 20d_Mean + k_active * 20d_Std`<br>*(`k_active` is `k_high` if 40d_Std > 20d_Std, else `k_low`)* | `VRP` crosses `20d_Mean` |
+| **`Agent_Garch`**<br>*(garch=60d, fcast=10d, band=0.5)* | `IV - GARCH_Forecast_RV < -band` | `IV - GARCH_Forecast_RV > +band` | Spread returns inside the no-trade band |
 
-### 2. `Agent_Percentile`
-- **Parameters:** `entry_low_percentile` (default: 0.20, implying top/bottom 20%), `allow_short`, `delta_hedge`, `rehedge_threshold`
-- **Signal Logic:** Instead of fixed standard deviation multiples, it evaluates the current VRP Z-score against its entire historical distribution. If the Z-score crosses into the top 20% historical percentile, it triggers a short straddle. If it falls into the bottom 20% percentile, it triggers a long straddle. It exits when the signal crosses the historical median (50th percentile).
-
-### 3. `Agent_2threshold`
-- **Parameters:** `k_high` (default: 1.2), `k_low` (default: 0.8), `allow_short`, `delta_hedge`, `rehedge_threshold`
-- **Signal Logic:** A regime-switching upgrade to the hard-threshold agent. It compares the 40-day VRP standard deviation against the 20-day VRP standard deviation. If the 40-day std > 20-day std (indicating a higher volatility regime), it dynamically enforces a stricter entry threshold (`k_high`). Otherwise, it uses the looser threshold (`k_low`).
-
-### 4. `Agent_Garch`
-- **Parameters:** `garch_lookback` (60), `forecast_horizon` (10), `spread_vol_lookback` (60), `band_multiplier` (0.5), `min_hold_days` (3), `rebalance_interval` (5)
-- **Signal Logic:** Uses an AR(1)-GARCH(1,1) model fitted on the underlying asset's log returns to forecast annualized Realized Volatility (RV) for the next 10 days. It trades the spread between the current Implied Volatility (IV) and the GARCH-forecasted RV. If IV is significantly overpricing the forecasted RV (spread > `band_multiplier * std`), it shorts volatility. If IV is underpricing the forecasted RV, it goes long. Includes anti-whipsaw controls (minimum hold days, rebalance intervals) to reduce turnover.
+*Note: All agents share standard risk parameters including `allow_short`, `delta_hedge`, and `rehedge_threshold`. The `Agent_Garch` model includes additional anti-whipsaw logic (minimum hold of 3 days, rebalancing restricted to every 5 days).*
 
 ---
 
@@ -39,10 +32,10 @@ The following table summarizes the key performance metrics of the four agents ov
 ```text
 ------------------------------------------------------------------------------------------------------------------------
        Agent           Win Rate     Sharpe Ratio  Sortino Ratio  Annual Return  Annual Volatility  Max Drawdown   Calmar Ratio  Kelly's Criteria
-Agent_hardThreshold     57.32%         1.7862         3.7867        157.89%           53.04%         -17.12%         9.2210          3.3678     
-         Agent_Perc     50.00%         0.7118         0.8290         49.66%           56.65%         -23.21%         2.1396          1.2567     
-   Agent_2threshold     56.18%         1.4366         2.1880        125.88%           56.72%         -31.59%         3.9844          2.5328     
-        Agent_Garch     58.49%         1.1243         0.7963         50.47%           36.34%         -19.40%         2.6013          3.0935     
+Agent_hardThreshold     78.05%         1.3083         1.7865        130.20%           63.73%         -27.52%         4.7308          2.0528     
+         Agent_Perc     63.64%         0.7118         0.8290         49.66%           56.65%         -23.21%         2.1396          1.2567     
+   Agent_2threshold     74.47%         0.7157         0.8275         55.73%           61.89%         -45.68%         1.2200          1.1564     
+        Agent_Garch     72.41%         1.1243         0.7963         50.47%           36.34%         -19.40%         2.6013          3.0935     
 ------------------------------------------------------------------------------------------------------------------------
 ```
 

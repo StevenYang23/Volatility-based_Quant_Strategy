@@ -21,8 +21,25 @@ def STATS(Data, Agents):
         downside = r[r < 0]
         downside_std = downside.std(ddof=1) if len(downside) > 1 else 0.0
 
-        trading_days = r[r != 0]
-        win_rate = (trading_days > 0).mean() if len(trading_days) > 0 else 0.0
+        # Calculate Transaction-based Win Rate
+        pos_state = pd.Series(res.get("position_state_for_pnl", []), dtype=float)
+        
+        if len(pos_state) != len(r) or len(pos_state) == 0:
+            # Fallback to daily win rate if pos_state is missing/malformed
+            trading_days = r[r != 0]
+            win_rate = (trading_days > 0).mean() if len(trading_days) > 0 else 0.0
+        else:
+            state_changes = pos_state.diff().ne(0).cumsum()
+            trade_returns = []
+            for _, group in r.groupby(state_changes):
+                state = pos_state.loc[group.index[0]]
+                if state != 0:
+                    # r is log return. sum of log returns = log of product of (1+R)
+                    # A transaction is profitable if the product of (1+R) > 1, which means sum(r) > 0
+                    trade_returns.append(group.sum())
+            
+            wins = sum(1 for ret in trade_returns if ret > 0)
+            win_rate = wins / len(trade_returns) if len(trade_returns) > 0 else 0.0
 
         # r is log return; aggregate in log space then convert back.
         cum_log = r.cumsum()
@@ -481,5 +498,5 @@ def Greeks_Attribution_Pie(Data, Agents):
         axes[j].axis("off")
 
     fig.suptitle("Summed Greeks Attribution Breakdown", fontsize=19, y=0.98)
-    fig.subplots_adjust(wspace=0.35, top=0.84)
+    fig.subplots_adjust(wspace=0.85, top=0.84)
     plt.show()
