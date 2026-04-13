@@ -2,9 +2,6 @@ import numpy as np
 import pandas as pd
 from pathlib import Path
 
-from pnl_attribution import full_reval_attribution, parse_occ_symbol, ttm_trading, _zero_attr
-
-
 class Agent_Percentile:
     def __init__(
         self,
@@ -43,6 +40,7 @@ class Agent_Percentile:
         self.vanna_attribute = []
         self.volga_attribute = []
         self.rho_attribute = []
+        self.hedge_attribute = []
         self.residual = []
         self.position_state_for_pnl = []
         self.vrp_history = []  # all valid VRP values the agent has seen
@@ -70,26 +68,8 @@ class Agent_Percentile:
         pd.DataFrame([row]).to_csv(self.log_path, mode="a", header=False, index=False)
 
     # ------------------------------------------------------------------
-    @staticmethod
-    def _get_K_expiry(data):
-        """Return (K, expiry_date) from CSV columns or by parsing Call_Sym."""
-        from datetime import date as _date
-        K = data.get("K", None)
-        exp = data.get("Expiry", None)
-        if K is not None and exp is not None and pd.notna(K) and pd.notna(exp):
-            if isinstance(exp, str):
-                parts = exp.split("-")
-                exp = _date(int(parts[0]), int(parts[1]), int(parts[2]))
-            return float(K), exp
-        sym = data.get("Call_Sym", None)
-        if sym and pd.notna(sym):
-            expiry, strike = parse_occ_symbol(str(sym))
-            return strike, expiry
-        return None, None
-
-    # ------------------------------------------------------------------
     def _compute_daily_pnl(self, data):
-        """Mark-to-market PnL with full-repricing Greek attribution."""
+        """Path-wise Greeks attribution with hedge bucket and residual."""
 
         self.position_state_for_pnl.append(self.num_options)
 
@@ -118,62 +98,76 @@ class Agent_Percentile:
         self.PnL.append(daily_pnl)
         self.Return.append(daily_return)
 
-        # --- Full-repricing attribution ---
-        K_curr, exp_curr = self._get_K_expiry(data)
-        K_prev, exp_prev = self._get_K_expiry(self.prev_data)
-        K = K_curr or K_prev
-        expiry = exp_curr or exp_prev
-
-        if K is None or expiry is None:
-            self._store_attr(_zero_attr(), dS_adj)
-            return
-
-        prev_date = pd.to_datetime(self.prev_data["Date"]).date()
-        curr_date = pd.to_datetime(data["Date"]).date()
-        T0 = ttm_trading(prev_date, expiry)
-        T1 = ttm_trading(curr_date, expiry)
-
         def _f(v):
             return float(v) if pd.notna(v) and np.isfinite(v) else 0.0
 
-        attr = full_reval_attribution(
-            S0=_f(self.prev_data["Stock_Close"]),
-            S1=_f(data["Stock_Close"]),
-            K=K,
-            T0=T0,
-            T1=T1,
-            r0=_f(self.prev_data["r"]),
-            r1=_f(data["r"]),
-            sig0=_f(self.prev_data["Straddle_imp_vol"]),
-            sig1=_f(data["Straddle_imp_vol"]),
-            market_straddle_change=straddle_price - prev_straddle,
+        d_sigma = _f(data["Straddle_imp_vol"]) - _f(self.prev_data["Straddle_imp_vol"])
+        dr = _f(data["r"]) - _f(self.prev_data["r"])
+        prev_date = pd.to_datetime(self.prev_data["Date"]).date().isoformat()
+        curr_date = pd.to_datetime(data["Date"]).date().isoformat()
+        dt_days = np.busday_count(prev_date, curr_date)
+        dt = (dt_days if dt_days > 0 else 1) / 252.0
+
+        q = self.num_options
+        h = self.num_underlying
+        prev_delta = _f(self.prev_data.get("Straddle_Delta"))
+        delta_pnl = q * prev_delta * dS
+        gamma_pnl = 0.5 * q * _f(self.prev_data.get("Straddle_Gamma")) * (dS ** 2)
+        vega_pnl = q * _f(self.prev_data.get("Straddle_Vega")) * d_sigma
+        vanna_pnl = q * _f(self.prev_data.get("Straddle_Vanna")) * dS * d_sigma
+        volga_pnl = 0.5 * q * _f(self.prev_data.get("Straddle_Volga")) * (d_sigma ** 2)
+        theta_pnl = q * _f(self.prev_data.get("Straddle_Theta")) * dt
+        rho_pnl = q * _f(self.prev_data.get("Straddle_Rho")) * dr * 100.0
+        hedge_pnl = h * dS_adj
+
+        explained = (
+            delta_pnl + gamma_pnl + vega_pnl + vanna_pnl +
+            volga_pnl + theta_pnl + rho_pnl + hedge_pnl
         )
-        self._store_attr(attr, dS_adj)
+        actual_delta_exp = q * prev_delta + (h if self.delta_hedge else 0.0)
+        self._store_attr(
+            actual_delta_exp=actual_delta_exp,
+            delta_pnl=delta_pnl,
+            gamma_pnl=gamma_pnl,
+            vega_pnl=vega_pnl,
+            theta_pnl=theta_pnl,
+            vanna_pnl=vanna_pnl,
+            volga_pnl=volga_pnl,
+            rho_pnl=rho_pnl,
+            hedge_pnl=hedge_pnl,
+            residual_pnl=daily_pnl - explained,
+        )
 
-    def _store_attr(self, attr, dS_adj):
-        option_delta_pnl = self.num_options * attr["delta"]
-        hedge_pnl = self.num_underlying * dS_adj
-
-        prev_straddle_delta = float(self.prev_data.get("Straddle_Delta", 0.0) or 0.0)
-        option_delta_exp = self.num_options * prev_straddle_delta
-        actual_delta_exp = (option_delta_exp + self.num_underlying) if self.delta_hedge else option_delta_exp
-
+    def _store_attr(
+        self,
+        actual_delta_exp,
+        delta_pnl,
+        gamma_pnl,
+        vega_pnl,
+        theta_pnl,
+        vanna_pnl,
+        volga_pnl,
+        rho_pnl,
+        hedge_pnl,
+        residual_pnl,
+    ):
         self.actual_delta.append(actual_delta_exp)
-        self.delta_attribute.append(option_delta_pnl + hedge_pnl)
-        self.gamma_attribute.append(self.num_options * attr["gamma"])
-        self.vega_attribute.append(self.num_options * attr["vega"])
-        self.theta_attribute.append(self.num_options * attr["theta"])
-        self.vanna_attribute.append(self.num_options * attr["vanna"])
-        self.volga_attribute.append(self.num_options * attr["volga"])
-        self.rho_attribute.append(self.num_options * attr["rho"])
-        self.residual.append(self.num_options * attr["residual"])
+        self.delta_attribute.append(delta_pnl)
+        self.gamma_attribute.append(gamma_pnl)
+        self.vega_attribute.append(vega_pnl)
+        self.theta_attribute.append(theta_pnl)
+        self.vanna_attribute.append(vanna_pnl)
+        self.volga_attribute.append(volga_pnl)
+        self.rho_attribute.append(rho_pnl)
+        self.hedge_attribute.append(hedge_pnl)
+        self.residual.append(residual_pnl)
 
     def _append_zeros(self):
         for lst in (self.PnL, self.Return, self.actual_delta,
                     self.delta_attribute, self.gamma_attribute,
                     self.vega_attribute, self.theta_attribute,
                     self.vanna_attribute, self.volga_attribute,
-                    self.rho_attribute, self.residual):
+                    self.rho_attribute, self.hedge_attribute, self.residual):
             lst.append(0.0)
 
     def trade(self, data):
@@ -331,6 +325,7 @@ class Agent_Percentile:
                 "vanna": self.vanna_attribute,
                 "volga": self.volga_attribute,
                 "rho": self.rho_attribute,
+                "hedge": self.hedge_attribute,
                 "residual": self.residual,
             },
             "pnl": self.PnL,
@@ -355,6 +350,7 @@ class Agent_Percentile:
                 "vanna": self.vanna_attribute,
                 "volga": self.volga_attribute,
                 "rho": self.rho_attribute,
+                "hedge": self.hedge_attribute,
                 "residual": self.residual,
             }
         )
@@ -374,6 +370,7 @@ class Agent_Percentile:
             vanna=("vanna", "sum"),
             volga=("volga", "sum"),
             rho=("rho", "sum"),
+            hedge=("hedge", "sum"),
             residual=("residual", "sum"),
         )
         summary.index = summary.index.map({-1: "short_straddle", 0: "flat", 1: "long_straddle"})

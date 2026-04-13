@@ -354,7 +354,7 @@ def Visuallize_Greeks_Attribute(Data, Agents):
     for agent in Agents:
         agent_results.append(agent.get_result())
 
-    greek_names = ["delta", "gamma", "vega", "theta", "vanna", "volga", "rho", "residual"]
+    greek_names = ["delta", "gamma", "vega", "theta", "vanna", "volga", "rho", "hedge", "residual"]
     fig, axes = plt.subplots(
         len(greek_names),
         1,
@@ -404,8 +404,8 @@ def Greeks_Attribution_Pie(Data, Agents):
         print("No agents provided.")
         return
 
-    greek_names = ["delta", "gamma", "vega", "theta", "vanna", "volga", "residual"]
-    colors = ["#1f77b4", "#9bb2d1", "#ff7f0e", "#f1b97a", "#2ca02c", "#98df8a", "#d62728"]
+    greek_names = ["delta", "gamma", "vega", "theta", "vanna", "volga", "rho", "hedge", "residual"]
+    colors = ["#1f77b4", "#9bb2d1", "#ff7f0e", "#f1b97a", "#2ca02c", "#98df8a", "#9467bd", "#17becf", "#d62728"]
 
     n_agents = len(agent_results)
     # Keep a consistent 2-column layout (two subplots per row).
