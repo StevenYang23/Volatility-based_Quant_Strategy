@@ -17,9 +17,10 @@ class Agent_hardThreshold:
         self.delta_hedge = delta_hedge
         self.rehedge_threshold = rehedge_threshold
         self.allow_short = allow_short
-        self.theta_time_basis = "calendar"
+        self.theta_time_basis = "trading"
         self.trading_days_per_year = 252
         self.calendar_days_per_year = 365.25
+        self._dsigma_cap = 0.15
 
         if self.theta_time_basis not in ("calendar", "trading"):
             raise ValueError("theta_time_basis must be either 'calendar' or 'trading'.")
@@ -109,9 +110,14 @@ class Agent_hardThreshold:
         straddle_price = data["Call_Close"] + data["Put_Close"]
         prev_straddle = self.prev_data["Call_Close"] + self.prev_data["Put_Close"]
         dS = data["Stock_Close"] - self.prev_data["Stock_Close"]
+        
+        div = data.get("Stock_Dividends", 0.0)
+        if pd.isna(div):
+            div = 0.0
+        dS_adj = dS + div
 
         daily_pnl = (self.num_options * (straddle_price - prev_straddle)
-                     + self.num_underlying * dS)
+                     + self.num_underlying * dS_adj)
 
         yesterday_exposure = (abs(self.num_options * prev_straddle) + 
                               abs(self.num_underlying * self.prev_data["Stock_Close"]))
@@ -125,20 +131,26 @@ class Agent_hardThreshold:
         self.Return.append(daily_return)
 
         # --- Greek attribution (Taylor expansion with prev-day Greeks) ---
-        _s = lambda v: float(v) if np.isfinite(v) else 0.0  # noqa: E731
+        def _s(v):
+            return float(v) if pd.notna(v) and np.isfinite(v) else 0.0
+            
+        def _diff(curr, prev):
+            if pd.notna(curr) and np.isfinite(curr) and pd.notna(prev) and np.isfinite(prev):
+                return float(curr) - float(prev)
+            return 0.0
 
-        d_sigma = _s(data["Straddle_imp_vol"]) - _s(self.prev_data["Straddle_imp_vol"])
-        dr = _s(data["r"]) - _s(self.prev_data["r"])
+        d_sigma_raw = _diff(data["Straddle_imp_vol"], self.prev_data["Straddle_imp_vol"])
+        d_sigma = np.clip(d_sigma_raw, -self._dsigma_cap, self._dsigma_cap)
+        dr = _diff(data["r"], self.prev_data["r"])
         dt = self._time_fraction(self.prev_data["Date"], data["Date"])
 
         option_delta = self.num_options * _s(self.prev_data["Straddle_Delta"])
         if self.delta_hedge:
-            # Hedged delta exposure = option delta + stock hedge.
             actual_delta_exposure = option_delta + self.num_underlying
         else:
             actual_delta_exposure = option_delta
 
-        delta_pnl = actual_delta_exposure * dS
+        delta_pnl = option_delta * dS + self.num_underlying * dS_adj
         gamma_pnl = 0.5 * self.num_options * _s(self.prev_data["Straddle_Gamma"]) * dS ** 2
         vega_pnl = self.num_options * _s(self.prev_data["Straddle_Vega"]) * d_sigma
         theta_pnl = self.num_options * _s(self.prev_data["Straddle_Theta"]) * dt

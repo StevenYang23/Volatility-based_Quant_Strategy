@@ -204,7 +204,7 @@ def Visuallize_Result(Data, Agents):
     )
     ax3.axhline(0.0, color="gray", linewidth=0.9, alpha=0.7)
     ax3.set_title("VRP Signal (Level, Mean, and +/- 1 Std)", fontsize=15)
-    ax3.set_ylabel("ZScore(VRP)", fontsize=15)
+    ax3.set_ylabel("VRP", fontsize=15)
     ax3.tick_params(axis="both", labelsize=13)
     ax3.grid(alpha=0.30)
     ax3.legend(loc="upper left", fontsize=11, ncol=2, framealpha=0.92)
@@ -361,7 +361,7 @@ def Visuallize_Greeks_Attribute(Data, Agents):
         figsize=(18, 22),
         sharex=True,
     )
-    fig.suptitle("Greeks Attrubution (in Dollar)", fontsize=19, y=0.997)
+    fig.suptitle("Greeks Attribution (in Dollar)", fontsize=19, y=0.997)
 
     for idx, greek in enumerate(greek_names):
         ax = axes[idx]

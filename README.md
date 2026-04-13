@@ -8,36 +8,94 @@ The core concept relies on the spread between Implied Volatility (IV) and Realiz
 
 During the holding period, the strategy dynamically hedges its directional exposure (Delta hedging) based on a defined threshold to ensure the returns are primarily driven by Vega, Gamma, and Theta, rather than the underlying asset's price movement. The framework calculates daily mark-to-market PnL, geometric log-returns, and performs a full second-order Taylor expansion to attribute the daily PnL to individual Greeks (Delta, Gamma, Vega, Theta, Vanna, Volga, Rho, and Residual).
 
+### Annualization & Day-Count Convention
+
+All calculations use **252 trading days per year** consistently:
+
+- **Time to maturity (T)** in `Build_data.ipynb`: `np.busday_count(date, expiry) / 252`
+- **Realized volatility (RV)**: `rolling_std(returns) * sqrt(252)`
+- **Black-Scholes Greeks**: computed with T in trading-year fractions, so Theta is per-trading-year
+- **Theta PnL attribution** in agents: `theta * dt` where `dt = busday_count / 252`
+- **Performance metrics** in `Visual.py`: annualized return, vol, Sharpe, Sortino all use 252
+
+### Greek Attribution
+
+Daily PnL is decomposed via a second-order Taylor expansion of the straddle price:
+
+- **Delta**: option delta responds to raw stock move `dS`; the stock hedge earns `dS + dividends`
+- **Gamma**: `0.5 * Gamma * dS^2` (raw stock move, excluding dividends)
+- **Vega**: `Vega * d(sigma)` where sigma is annualized implied vol
+- **Theta**: `Theta * dt` where dt is the trading-day fraction
+- **Vanna**: `Vanna * dS * d(sigma)`
+- **Volga**: `0.5 * Volga * d(sigma)^2`
+- **Rho**: `Rho * dr * 100` (Rho is stored per 1pp; multiply by decimal change * 100 to recover full sensitivity)
+- **Residual**: actual PnL minus sum of attributed Greeks
+
 ---
 
 ## Strategy Agents
 
-The codebase supports multiple signal-generating agents that can be run concurrently in a backtest. Each agent inherits the same execution, PnL, and Greek attribution framework but uses a distinct entry/exit logic.
+The codebase supports multiple signal-generating agents that can be run concurrently in a backtest. Each agent shares the same execution, PnL, and Greek attribution framework but uses distinct entry/exit logic.
 
-| Agent | Long Condition (Buy Volatility) | Short Condition (Sell Volatility) | Close Condition (Exit Position) |
+### Shared Parameters
+
+All agents accept these parameters:
+
+| Parameter | Description | Default |
+| :--- | :--- | :--- |
+| `display_name` | Label used in plots and stats tables | agent-specific |
+| `allow_short` | Whether the agent can sell straddles | `True` |
+| `delta_hedge` | Whether to delta-hedge positions | `True` |
+| `rehedge_threshold` | Net delta magnitude that triggers a re-hedge | `0.5` |
+
+### Signal Logic
+
+| Agent | Long (Buy Vol) | Short (Sell Vol) | Close (Exit) |
 | :--- | :--- | :--- | :--- |
-| **`Agent_hardThreshold`**<br>*(k=1)* | `VRP < 20d_Mean - k * 20d_Std` | `VRP > 20d_Mean + k * 20d_Std` | `VRP` crosses `20d_Mean` |
-| **`Agent_Percentile`**<br>*(low=0.20, high=0.80)* | `Z-Score(VRP)` < historical 20th percentile | `Z-Score(VRP)` > historical 80th percentile | `Z-Score(VRP)` crosses historical median |
-| **`Agent_2threshold`**<br>*(k_high=1.2, k_low=0.8)* | `VRP < 20d_Mean - k_active * 20d_Std`<br>*(`k_active` is `k_high` if 40d_Std > 20d_Std, else `k_low`)* | `VRP > 20d_Mean + k_active * 20d_Std`<br>*(`k_active` is `k_high` if 40d_Std > 20d_Std, else `k_low`)* | `VRP` crosses `20d_Mean` |
-| **`Agent_Garch`**<br>*(garch=60d, fcast=10d, band=0.5)* | `IV - GARCH_Forecast_RV < -band` | `IV - GARCH_Forecast_RV > +band` | Spread returns inside the no-trade band |
+| **`Agent_hardThreshold`**<br>`k=1` | `VRP < Mean - k * Std` | `VRP > Mean + k * Std` | `VRP` crosses `Mean` |
+| **`Agent_Percentile`**<br>`entry_percentile=0.20` | `Z(VRP)` below expanding low percentile | `Z(VRP)` above expanding high percentile | `Z(VRP)` crosses expanding median |
+| **`Agent_2threshold`**<br>`k_high`, `k_low` | `VRP < Mean - k_active * Std`<br>(`k_active = k_high` if 40d\_Std > 20d\_Std, else `k_low`) | `VRP > Mean + k_active * Std`<br>(same regime switch) | `VRP` crosses `Mean` |
+| **`Agent_Garch`**<br>`z_entry=1.0` | z-score of (IV - GARCH\_RV) < `-z_entry` | z-score of (IV - GARCH\_RV) > `+z_entry` | z-score crosses zero |
 
-*Note: All agents share standard risk parameters including `allow_short`, `delta_hedge`, and `rehedge_threshold`. The `Agent_Garch` model includes additional anti-whipsaw logic (minimum hold of 3 days, rebalancing restricted to every 5 days).*
+### Agent_Garch Details
+
+The GARCH agent uses a GARCH(1,1) model to forecast realized volatility, then trades the IV-RV spread:
+
+1. **Fit**: GARCH(1,1) is fit on the trailing 20 trading days of log returns, re-fit every 5 days
+2. **Update**: between re-fits, the conditional variance is rolled forward via the GARCH recursion: `h_{t+1} = omega + alpha * eps_t^2 + beta * h_t`
+3. **Signal**: `spread = IV - sqrt(h) * sqrt(252)`. The z-score of the spread (expanding-window mean & std, min 20 observations) determines entry/exit
+4. **Fallback**: when `arch` is not installed, an EWMA variance (RiskMetrics, lambda=0.94) is used instead
 
 ---
 
-## Strategy Statistics
+## Data Pipeline (`Build_data.ipynb`)
 
-The following table summarizes the key performance metrics of the four agents over the backtested period:
+Builds a single CSV per symbol at `DataSet/{symbol}.csv`:
 
-```text
-------------------------------------------------------------------------------------------------------------------------
-       Agent           Win Rate     Sharpe Ratio  Sortino Ratio  Annual Return  Annual Volatility  Max Drawdown   Calmar Ratio  Kelly's Criteria
-Agent_hardThreshold     78.05%         1.3083         1.7865        130.20%           63.73%         -27.52%         4.7308          2.0528     
-         Agent_Perc     63.64%         0.7118         0.8290         49.66%           56.65%         -23.21%         2.1396          1.2567     
-   Agent_2threshold     74.47%         0.7157         0.8275         55.73%           61.89%         -45.68%         1.2200          1.1564     
-        Agent_Garch     72.41%         1.1243         0.7963         50.47%           36.34%         -19.40%         2.6013          3.0935     
-------------------------------------------------------------------------------------------------------------------------
-```
+1. Downloads daily equity data from **yfinance** (close, dividends, returns, 20-day RV)
+2. Fetches the 1-month Treasury yield from **Polygon** as the risk-free rate
+3. For each month, selects the ATM straddle (next-month expiry) via **Polygon** options chain
+4. Retrieves daily option bars, computes Black-Scholes implied vol (Polygon IV when available, `brentq` inversion otherwise)
+5. Computes straddle implied vol (bisection so BS\_straddle(sigma) = market\_price), VRP = IV - RV
+6. Computes per-leg and straddle Greeks (Delta, Gamma, Vega, Theta, Rho, Vanna, Volga)
+
+### Key Column Definitions
+
+| Column | Description |
+| :--- | :--- |
+| `VRP` | `Straddle_imp_vol - RV` (annualized, decimal) |
+| `Straddle_Theta` | per-trading-year theta (T = trading\_days / 252) |
+| `Straddle_Rho` | per +1 percentage point change in r |
+| `Force_Close` | `True` on last trading day of each month |
+
+---
+
+## Backtest (`Back_test.ipynb`)
+
+1. Load a dataset CSV and compute rolling VRP statistics (`VRP_20d_mean`, `VRP_20d_std`, `VRP_40d_std`)
+2. Instantiate agents with desired parameters
+3. Loop through each row calling `agent.trade(row)`
+4. Generate performance stats and visualizations
 
 ---
 
@@ -47,17 +105,14 @@ The backtest suite generates comprehensive visualizations to analyze returns, ri
 
 ### 1. Cumulative Return & Signals
 ![Cumulative Return](demo/Return.png)
-**Explanation:** 
-- **Top Panel:** Shows the cumulative geometric return (Value Ratio) of the underlying asset versus the different strategy agents over time. 
-- **Middle Panel:** Displays the daily log-return rate of the agents.
-- **Bottom Panel:** Illustrates the core VRP signal level along with its rolling 20-day mean and $\pm 1$ standard deviation bands, which dictate the hard-threshold trading signals.
+- **Top Panel:** Cumulative geometric return (value ratio) of the underlying asset versus agents
+- **Middle Panel:** Daily log-return rate of each agent
+- **Bottom Panel:** VRP signal level with rolling 20-day mean and ±1 std bands
 
 ### 2. PnL Attribution by Greek (Pie Breakdown)
 ![Greeks Attribution Pie](demo/Greeks_Attribution_Pie.png)
-**Explanation:** 
-This visual aggregates the total dollar PnL generated over the backtest period and breaks it down by its option Greek components. For a volatility timing strategy, a large portion of the PnL is expected to be driven by Vega (implied volatility changes) and Gamma/Theta trade-offs, while Delta should ideally be minimal if properly hedged. The Residual captures higher-order terms and discrete hedging friction.
+Aggregates total dollar PnL and breaks it down by Greek component. For a volatility timing strategy, Vega and Gamma/Theta should dominate; Delta should be minimal if properly hedged.
 
 ### 3. Daily Greeks Attribution
 ![Greeks Attribution Line](demo/Greeks_Attribution_line.png)
-**Explanation:** 
-This plot unpacks the daily dollar attribution of the portfolio across all components (Delta, Gamma, Vega, Theta, Vanna, Volga, Rho, and Residual). It helps identify which risk factors were driving the portfolio's performance on a given day and ensures the actual exposure aligns with the strategy's market-neutral, volatility-focused intent.
+Daily dollar attribution across all components (Delta, Gamma, Vega, Theta, Vanna, Volga, Rho, Residual), showing which risk factors drive performance on each day.

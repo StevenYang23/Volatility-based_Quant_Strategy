@@ -5,50 +5,43 @@ from warnings import catch_warnings, simplefilter
 
 try:
     from arch import arch_model
-except ImportError:  # pragma: no cover - runtime environment dependent
+except ImportError:
     arch_model = None
 
 
 class Agent_Garch:
+    _LOOKBACK = 20
+    _REFIT_EVERY = 5
+    _MIN_SPREAD_OBS = 20
+
     def __init__(
         self,
         display_name="Agent_Garch",
         allow_short=True,
         delta_hedge=True,
         rehedge_threshold=0.5,
-        garch_lookback=60,
-        forecast_horizon=10,
-        spread_vol_lookback=60,
-        band_multiplier=0.5,
-        min_hold_days=3,
-        rebalance_interval=5,
+        z_entry=1.0,
     ):
         self.display_name = display_name
         self.delta_hedge = delta_hedge
         self.rehedge_threshold = rehedge_threshold
         self.allow_short = allow_short
-        self.theta_time_basis = "calendar"
+        self.z_entry = max(float(z_entry), 0.0)
+        self.theta_time_basis = "trading"
         self.trading_days_per_year = 252
         self.calendar_days_per_year = 365.25
-        self.garch_lookback = max(int(garch_lookback), 20)
-        self.forecast_horizon = max(int(forecast_horizon), 1)
-        self.spread_vol_lookback = max(int(spread_vol_lookback), 20)
-        self.band_multiplier = max(float(band_multiplier), 0.0)
-        self.min_hold_days = max(int(min_hold_days), 0)
-        self.rebalance_interval = max(int(rebalance_interval), 1)
+        self._dsigma_cap = 0.15
 
         if self.theta_time_basis not in ("calendar", "trading"):
             raise ValueError("theta_time_basis must be either 'calendar' or 'trading'.")
 
-        self.num_options = 0      # +1 long straddle, -1 short straddle, 0 flat
-        self.num_underlying = 0   # shares held for delta hedge
+        self.num_options = 0
+        self.num_underlying = 0
         self.entry_straddle_price = 0.0
-
         self.prev_data = None
 
         self.PnL = []
         self.Return = []
-
         self.actual_delta = []
         self.delta_attribute = []
         self.gamma_attribute = []
@@ -59,21 +52,32 @@ class Agent_Garch:
         self.rho_attribute = []
         self.residual = []
         self.position_state_for_pnl = []
-        self.stock_close_history = []
-        self.imp_vol_history = []
+
+        self._omega = np.nan
+        self._alpha = np.nan
+        self._beta = np.nan
+        self._h = np.nan
+        self._days_since_fit = self._REFIT_EVERY
+        self._stock_close_buf = []
+        self._spread_history = []
+
         self.rv_forecast_history = []
         self.iv_rv_spread_history = []
-        self.garch_direction_signal = []  # +1 long-vol, -1 short-vol, 0 neutral
-        self.days_in_position = 0
-        self.days_since_rebalance = self.rebalance_interval
+        self.garch_direction_signal = []
         self._init_trade_log()
+
+    # ------------------------------------------------------------------
+    # Boilerplate (logging, PnL, Greeks attribution)
+    # ------------------------------------------------------------------
 
     def _init_trade_log(self):
         logs_dir = Path(__file__).resolve().parent / "logs"
         logs_dir.mkdir(parents=True, exist_ok=True)
         self.log_path = logs_dir / f"{self.display_name}_log.csv"
         if not self.log_path.exists():
-            pd.DataFrame(columns=["Date", "Transaction", "Earned"]).to_csv(self.log_path, index=False)
+            pd.DataFrame(columns=["Date", "Transaction", "Earned"]).to_csv(
+                self.log_path, index=False
+            )
 
     def _current_pnl_for_log(self):
         return float(self.PnL[-1]) if len(self.PnL) > 0 else 0.0
@@ -90,16 +94,17 @@ class Agent_Garch:
 
     @staticmethod
     def dataset_greek_sign_sanity(data: pd.DataFrame):
-        """
-        Dataset-level sign sanity checks for long-straddle Greeks.
-        """
         out = {}
         if "Straddle_Gamma" in data.columns:
             valid = data["Straddle_Gamma"].dropna()
-            out["straddle_gamma_positive_ratio"] = float((valid > 0).mean()) if len(valid) else np.nan
+            out["straddle_gamma_positive_ratio"] = (
+                float((valid > 0).mean()) if len(valid) else np.nan
+            )
         if "Straddle_Theta" in data.columns:
             valid = data["Straddle_Theta"].dropna()
-            out["straddle_theta_negative_ratio"] = float((valid < 0).mean()) if len(valid) else np.nan
+            out["straddle_theta_negative_ratio"] = (
+                float((valid < 0).mean()) if len(valid) else np.nan
+            )
         return out
 
     def _time_fraction(self, prev_date, curr_date):
@@ -119,10 +124,7 @@ class Agent_Garch:
         day_count = (curr_ts - prev_ts).days
         return day_count / float(self.calendar_days_per_year)
 
-    # ------------------------------------------------------------------
     def _compute_daily_pnl(self, data):
-        """Mark-to-market PnL and second-order Greek attribution."""
-
         self.position_state_for_pnl.append(self.num_options)
 
         if self.num_options == 0 or self.prev_data is None:
@@ -133,44 +135,63 @@ class Agent_Garch:
         prev_straddle = self.prev_data["Call_Close"] + self.prev_data["Put_Close"]
         dS = data["Stock_Close"] - self.prev_data["Stock_Close"]
 
-        daily_pnl = (self.num_options * (straddle_price - prev_straddle)
-                     + self.num_underlying * dS)
+        div = data.get("Stock_Dividends", 0.0)
+        if pd.isna(div):
+            div = 0.0
+        dS_adj = dS + div
 
-        yesterday_exposure = (abs(self.num_options * prev_straddle) + 
-                              abs(self.num_underlying * self.prev_data["Stock_Close"]))
+        daily_pnl = (
+            self.num_options * (straddle_price - prev_straddle)
+            + self.num_underlying * dS_adj
+        )
+
+        yesterday_exposure = abs(self.num_options * prev_straddle) + abs(
+            self.num_underlying * self.prev_data["Stock_Close"]
+        )
 
         simple_return = daily_pnl / yesterday_exposure if yesterday_exposure > 0 else 0.0
-        # Store log return for additive time aggregation.
         safe_simple_return = max(simple_return, -0.999999999)
         daily_return = np.log1p(safe_simple_return)
 
         self.PnL.append(daily_pnl)
         self.Return.append(daily_return)
 
-        # --- Greek attribution (Taylor expansion with prev-day Greeks) ---
-        _s = lambda v: float(v) if np.isfinite(v) else 0.0  # noqa: E731
+        def _s(v):
+            return float(v) if pd.notna(v) and np.isfinite(v) else 0.0
 
-        d_sigma = _s(data["Straddle_imp_vol"]) - _s(self.prev_data["Straddle_imp_vol"])
-        dr = _s(data["r"]) - _s(self.prev_data["r"])
+        def _diff(curr, prev):
+            if (
+                pd.notna(curr)
+                and np.isfinite(curr)
+                and pd.notna(prev)
+                and np.isfinite(prev)
+            ):
+                return float(curr) - float(prev)
+            return 0.0
+
+        d_sigma_raw = _diff(data["Straddle_imp_vol"], self.prev_data["Straddle_imp_vol"])
+        d_sigma = np.clip(d_sigma_raw, -self._dsigma_cap, self._dsigma_cap)
+        dr = _diff(data["r"], self.prev_data["r"])
         dt = self._time_fraction(self.prev_data["Date"], data["Date"])
 
         option_delta = self.num_options * _s(self.prev_data["Straddle_Delta"])
         if self.delta_hedge:
-            # Hedged delta exposure = option delta + stock hedge.
             actual_delta_exposure = option_delta + self.num_underlying
         else:
             actual_delta_exposure = option_delta
 
-        delta_pnl = actual_delta_exposure * dS
-        gamma_pnl = 0.5 * self.num_options * _s(self.prev_data["Straddle_Gamma"]) * dS ** 2
-        vega_pnl  = self.num_options * _s(self.prev_data["Straddle_Vega"]) * d_sigma
+        delta_pnl = option_delta * dS + self.num_underlying * dS_adj
+        gamma_pnl = 0.5 * self.num_options * _s(self.prev_data["Straddle_Gamma"]) * dS**2
+        vega_pnl = self.num_options * _s(self.prev_data["Straddle_Vega"]) * d_sigma
         theta_pnl = self.num_options * _s(self.prev_data["Straddle_Theta"]) * dt
         vanna_pnl = self.num_options * _s(self.prev_data["Straddle_Vanna"]) * dS * d_sigma
-        volga_pnl = 0.5 * self.num_options * _s(self.prev_data["Straddle_Volga"]) * d_sigma ** 2
-        rho_pnl   = self.num_options * _s(self.prev_data["Straddle_Rho"]) * dr * 100
+        volga_pnl = 0.5 * self.num_options * _s(self.prev_data["Straddle_Volga"]) * d_sigma**2
+        rho_pnl = self.num_options * _s(self.prev_data["Straddle_Rho"]) * dr * 100
 
-        attributed = (delta_pnl + gamma_pnl + vega_pnl + theta_pnl
-                      + vanna_pnl + volga_pnl + rho_pnl)
+        attributed = (
+            delta_pnl + gamma_pnl + vega_pnl + theta_pnl
+            + vanna_pnl + volga_pnl + rho_pnl
+        )
 
         self.actual_delta.append(actual_delta_exposure)
         self.delta_attribute.append(delta_pnl)
@@ -183,168 +204,187 @@ class Agent_Garch:
         self.residual.append(daily_pnl - attributed)
 
     def _append_zeros(self):
-        for lst in (self.PnL, self.Return, self.actual_delta,
-                    self.delta_attribute, self.gamma_attribute,
-                    self.vega_attribute, self.theta_attribute,
-                    self.vanna_attribute, self.volga_attribute,
-                    self.rho_attribute, self.residual):
+        for lst in (
+            self.PnL, self.Return, self.actual_delta,
+            self.delta_attribute, self.gamma_attribute,
+            self.vega_attribute, self.theta_attribute,
+            self.vanna_attribute, self.volga_attribute,
+            self.rho_attribute, self.residual,
+        ):
             lst.append(0.0)
 
-    def _garch_forecast_rv_annualized(self):
-        """
-        Forecast realized volatility (annualized) over next forecast_horizon days
-        using GARCH on underlying log returns.
-        """
-        if len(self.stock_close_history) < self.garch_lookback + 1:
-            return np.nan
+    # ------------------------------------------------------------------
+    # GARCH engine
+    # ------------------------------------------------------------------
 
-        px = np.asarray(self.stock_close_history[-(self.garch_lookback + 1):], dtype=float)
+    def _fit_garch(self):
+        px = np.asarray(self._stock_close_buf[-(self._LOOKBACK + 1):], dtype=float)
         px = px[np.isfinite(px)]
-        if px.size < self.garch_lookback + 1:
-            return np.nan
+        if px.size < self._LOOKBACK + 1:
+            return False
 
-        # Daily log returns.
         log_ret = np.diff(np.log(px))
         log_ret = log_ret[np.isfinite(log_ret)]
-        if log_ret.size < 10:
-            return np.nan
+        if log_ret.size < 20:
+            return False
+
+        log_ret_pct = log_ret * 100.0
 
         if arch_model is None:
-            # Fallback: rolling realized vol annualized.
-            sigma_daily = float(np.nanstd(log_ret, ddof=1)) if log_ret.size > 1 else np.nan
-            if not np.isfinite(sigma_daily):
-                return np.nan
-            return sigma_daily * np.sqrt(self.trading_days_per_year)
+            var = float(np.var(log_ret_pct))
+            for r in log_ret_pct:
+                var = 0.94 * var + 0.06 * r * r
+            self._omega = 0.0
+            self._alpha = 0.06
+            self._beta = 0.94
+            self._h = var
+            self._days_since_fit = 0
+            return True
 
         try:
             with catch_warnings():
                 simplefilter("ignore")
                 model = arch_model(
-                    log_ret * 100.0,
+                    log_ret_pct,
                     mean="Zero",
                     vol="GARCH",
-                    p=1,
-                    q=1,
+                    p=1, q=1,
                     dist="normal",
                     rescale=False,
                 )
                 fit = model.fit(disp="off")
-                fcast = fit.forecast(horizon=self.forecast_horizon, reindex=False)
-            # Variance is in (% return)^2. Convert to return^2, annualize.
-            var_path = np.asarray(fcast.variance.iloc[-1].values, dtype=float) / (100.0 ** 2)
-            if var_path.size == 0 or not np.any(np.isfinite(var_path)):
-                return np.nan
-            cum_var = float(np.nansum(var_path))
-            if not np.isfinite(cum_var) or cum_var <= 0:
-                return np.nan
-            sigma_daily = np.sqrt(cum_var / self.forecast_horizon)
-            rv_annualized = sigma_daily * np.sqrt(self.trading_days_per_year)
-            return float(rv_annualized)
+            self._omega = float(fit.params.get("omega", 0.0))
+            self._alpha = float(fit.params.get("alpha[1]", 0.06))
+            self._beta = float(fit.params.get("beta[1]", 0.94))
+            cond_vol = fit.conditional_volatility
+            self._h = (
+                float(cond_vol.iloc[-1]) ** 2
+                if len(cond_vol) > 0
+                else float(np.var(log_ret_pct))
+            )
+            self._days_since_fit = 0
+            return True
         except Exception:
+            return False
+
+    def _update_h(self, daily_log_return):
+        if np.isnan(self._omega):
+            return
+        eps_pct = daily_log_return * 100.0
+        self._h = self._omega + self._alpha * eps_pct**2 + self._beta * self._h
+
+    def _garch_rv_annualized(self):
+        if np.isnan(self._h) or self._h <= 0:
             return np.nan
+        sigma_daily = np.sqrt(self._h) / 100.0
+        return sigma_daily * np.sqrt(self.trading_days_per_year)
+
+    # ------------------------------------------------------------------
+    # Trade logic
+    # ------------------------------------------------------------------
 
     def trade(self, data):
         self._compute_daily_pnl(data)
 
-        # Keep state histories aligned with trading days.
         curr_spot = data.get("Stock_Close", np.nan)
         curr_iv = data.get("Straddle_imp_vol", np.nan)
+
         if pd.notna(curr_spot):
-            self.stock_close_history.append(float(curr_spot))
-        if pd.notna(curr_iv):
-            self.imp_vol_history.append(float(curr_iv))
+            self._stock_close_buf.append(float(curr_spot))
+
+        if len(self._stock_close_buf) >= 2:
+            ret = np.log(self._stock_close_buf[-1] / self._stock_close_buf[-2])
+            if np.isfinite(ret) and not np.isnan(self._omega):
+                self._update_h(ret)
+            self._days_since_fit += 1
+
+        if (
+            self._days_since_fit >= self._REFIT_EVERY
+            and len(self._stock_close_buf) >= self._LOOKBACK + 1
+        ):
+            self._fit_garch()
 
         if data["Force_Close"]:
             self.close_position(data)
             self.garch_direction_signal.append(0)
             self.rv_forecast_history.append(np.nan)
             self.iv_rv_spread_history.append(np.nan)
-            self.days_in_position = 0
-            self.days_since_rebalance = 0
             self.prev_data = data
             return
 
-        rv_forecast = self._garch_forecast_rv_annualized()
-        if pd.isna(curr_iv) or not np.isfinite(rv_forecast):
+        garch_rv = self._garch_rv_annualized()
+
+        if pd.isna(curr_iv) or not np.isfinite(garch_rv):
             self.garch_direction_signal.append(0)
-            self.rv_forecast_history.append(rv_forecast if np.isfinite(rv_forecast) else np.nan)
+            self.rv_forecast_history.append(
+                garch_rv if np.isfinite(garch_rv) else np.nan
+            )
             self.iv_rv_spread_history.append(np.nan)
-            self.days_since_rebalance += 1
-            if self.num_options != 0:
-                self.days_in_position += 1
             self.prev_data = data
             return
 
-        iv_rv_spread = float(curr_iv) - float(rv_forecast)
-        self.iv_rv_spread_history.append(iv_rv_spread)
-        self.rv_forecast_history.append(float(rv_forecast))
+        spread = float(curr_iv) - garch_rv
+        self._spread_history.append(spread)
+        self.rv_forecast_history.append(float(garch_rv))
+        self.iv_rv_spread_history.append(spread)
 
-        spread_window = np.asarray(
-            self.iv_rv_spread_history[-self.spread_vol_lookback:],
-            dtype=float,
-        )
-        spread_window = spread_window[np.isfinite(spread_window)]
-        spread_std = float(np.nanstd(spread_window, ddof=1)) if spread_window.size > 1 else np.nan
-        band = self.band_multiplier * spread_std if np.isfinite(spread_std) and spread_std > 0 else np.nan
+        if len(self._spread_history) < self._MIN_SPREAD_OBS:
+            self.garch_direction_signal.append(0)
+            self.prev_data = data
+            return
 
-        if not np.isfinite(band):
-            direction_signal = 0
-        elif iv_rv_spread > band:
-            # IV overpriced vs forecast RV -> short volatility.
-            direction_signal = -1
-        elif iv_rv_spread < -band:
-            # IV underpriced vs forecast RV -> long volatility.
-            direction_signal = 1
+        spread_arr = np.asarray(self._spread_history, dtype=float)
+        spread_arr = spread_arr[np.isfinite(spread_arr)]
+        mu = float(np.mean(spread_arr))
+        sigma = float(np.std(spread_arr, ddof=1))
+        if sigma < 1e-12:
+            self.garch_direction_signal.append(0)
+            self.prev_data = data
+            return
+
+        z = (spread - mu) / sigma
+
+        if z > self.z_entry:
+            direction = -1
+        elif z < -self.z_entry:
+            direction = 1
         else:
-            direction_signal = 0
+            direction = 0
 
-        self.garch_direction_signal.append(direction_signal)
+        self.garch_direction_signal.append(direction)
 
-        # Desired target position from signal.
-        target_pos = 0
-        if direction_signal > 0:
-            target_pos = 1
-        elif direction_signal < 0 and self.allow_short:
-            target_pos = -1
+        target = 0
+        if direction > 0:
+            target = 1
+        elif direction < 0 and self.allow_short:
+            target = -1
 
         curr_pos = self.num_options
-        can_rebalance = self.days_since_rebalance >= self.rebalance_interval
-        can_exit = self.days_in_position >= self.min_hold_days
-        did_rebalance = False
 
         if curr_pos == 0:
-            if target_pos != 0 and can_rebalance:
-                if target_pos > 0:
+            if target != 0:
+                if target > 0:
                     self.long_position(data)
                 else:
                     self.short_position(data)
-                did_rebalance = True
         else:
-            # From non-flat, wait min_hold_days before changing regime.
-            if curr_pos != target_pos and can_exit and can_rebalance:
+            should_close = (curr_pos == 1 and z >= 0) or (curr_pos == -1 and z <= 0)
+            if should_close:
                 self.close_position(data)
-                if target_pos > 0:
-                    self.long_position(data)
-                elif target_pos < 0:
-                    self.short_position(data)
-                did_rebalance = True
+                if target != 0 and target != curr_pos:
+                    if target > 0:
+                        self.long_position(data)
+                    else:
+                        self.short_position(data)
 
         if self.num_options != 0 and self.delta_hedge:
             self.rehedge(data)
 
-        if did_rebalance:
-            self.days_since_rebalance = 0
-        else:
-            self.days_since_rebalance += 1
-
-        if self.num_options == 0:
-            self.days_in_position = 0
-        elif did_rebalance or curr_pos == 0:
-            self.days_in_position = 1
-        else:
-            self.days_in_position += 1
-
         self.prev_data = data
+
+    # ------------------------------------------------------------------
+    # Position management
+    # ------------------------------------------------------------------
 
     def long_position(self, data):
         self.num_options = 1
@@ -374,10 +414,11 @@ class Agent_Garch:
             self.num_underlying = -self.num_options * data["Straddle_Delta"]
             self._log_transaction(data, "rehedge")
 
+    # ------------------------------------------------------------------
+    # Output
+    # ------------------------------------------------------------------
+
     def get_result(self):
-        """
-        Return a structured result payload for analysis/reporting.
-        """
         return {
             "display_name": self.display_name,
             "greeks_attribute": {
@@ -401,10 +442,6 @@ class Agent_Garch:
         }
 
     def regime_attribution_summary(self, include_flat=False):
-        """
-        Summarize cumulative attribution by pre-trade position regime.
-        pre_state = -1 (short straddle), 0 (flat), +1 (long straddle).
-        """
         regime_df = pd.DataFrame(
             {
                 "pre_state": self.position_state_for_pnl,
@@ -437,5 +474,7 @@ class Agent_Garch:
             rho=("rho", "sum"),
             residual=("residual", "sum"),
         )
-        summary.index = summary.index.map({-1: "short_straddle", 0: "flat", 1: "long_straddle"})
+        summary.index = summary.index.map(
+            {-1: "short_straddle", 0: "flat", 1: "long_straddle"}
+        )
         return summary
