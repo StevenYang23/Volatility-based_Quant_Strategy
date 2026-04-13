@@ -12,7 +12,7 @@ class Agent_Percentile:
         entry_percentile=0.20,
         allow_short=True,
         delta_hedge=True,
-        rehedge_threshold=0.5,
+        rehedge_threshold=0.05,
     ):
         self.display_name = display_name
         self.entry_low_percentile = entry_percentile

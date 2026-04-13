@@ -21,7 +21,7 @@ class Agent_Garch:
         display_name="Agent_Garch",
         allow_short=True,
         delta_hedge=True,
-        rehedge_threshold=0.5,
+        rehedge_threshold=0.05,
         z_entry=1.0,
     ):
         self.display_name = display_name
