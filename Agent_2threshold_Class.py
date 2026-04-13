@@ -2,6 +2,8 @@ import numpy as np
 import pandas as pd
 from pathlib import Path
 
+from pnl_attribution import full_reval_attribution, parse_occ_symbol, ttm_trading, _zero_attr
+
 
 class Agent_2threshold:
     def __init__(
@@ -19,17 +21,12 @@ class Agent_2threshold:
         self.delta_hedge = delta_hedge
         self.rehedge_threshold = rehedge_threshold
         self.allow_short = allow_short
-        self.theta_time_basis = "trading"
-        self.trading_days_per_year = 252
-        self.calendar_days_per_year = 365.25
-        self._dsigma_cap = 0.15
-
-        if self.theta_time_basis not in ("calendar", "trading"):
-            raise ValueError("theta_time_basis must be either 'calendar' or 'trading'.")
 
         self.num_options = 0      # +1 long straddle, -1 short straddle, 0 flat
         self.num_underlying = 0   # shares held for delta hedge
         self.entry_straddle_price = 0.0
+        self._hedge_avg_price = 0.0
+        self._realized_hedge_pnl = 0.0
 
         self.prev_data = None
 
@@ -68,40 +65,27 @@ class Agent_2threshold:
         }
         pd.DataFrame([row]).to_csv(self.log_path, mode="a", header=False, index=False)
 
+    # ------------------------------------------------------------------
     @staticmethod
-    def dataset_greek_sign_sanity(data: pd.DataFrame):
-        """
-        Dataset-level sign sanity checks for long-straddle Greeks.
-        """
-        out = {}
-        if "Straddle_Gamma" in data.columns:
-            valid = data["Straddle_Gamma"].dropna()
-            out["straddle_gamma_positive_ratio"] = float((valid > 0).mean()) if len(valid) else np.nan
-        if "Straddle_Theta" in data.columns:
-            valid = data["Straddle_Theta"].dropna()
-            out["straddle_theta_negative_ratio"] = float((valid < 0).mean()) if len(valid) else np.nan
-        return out
-
-    def _time_fraction(self, prev_date, curr_date):
-        prev_ts = pd.to_datetime(prev_date)
-        curr_ts = pd.to_datetime(curr_date)
-        if curr_ts <= prev_ts:
-            return 0.0
-
-        if self.theta_time_basis == "trading":
-            prev_d = prev_ts.date().isoformat()
-            curr_d = curr_ts.date().isoformat()
-            business_days = np.busday_count(prev_d, curr_d)
-            if business_days == 0:
-                business_days = 1
-            return business_days / float(self.trading_days_per_year)
-
-        day_count = (curr_ts - prev_ts).days
-        return day_count / float(self.calendar_days_per_year)
+    def _get_K_expiry(data):
+        """Return (K, expiry_date) from CSV columns or by parsing Call_Sym."""
+        from datetime import date as _date
+        K = data.get("K", None)
+        exp = data.get("Expiry", None)
+        if K is not None and exp is not None and pd.notna(K) and pd.notna(exp):
+            if isinstance(exp, str):
+                parts = exp.split("-")
+                exp = _date(int(parts[0]), int(parts[1]), int(parts[2]))
+            return float(K), exp
+        sym = data.get("Call_Sym", None)
+        if sym and pd.notna(sym):
+            expiry, strike = parse_occ_symbol(str(sym))
+            return strike, expiry
+        return None, None
 
     # ------------------------------------------------------------------
     def _compute_daily_pnl(self, data):
-        """Mark-to-market PnL and second-order Greek attribution."""
+        """Mark-to-market PnL with full-repricing Greek attribution."""
 
         self.position_state_for_pnl.append(self.num_options)
 
@@ -112,7 +96,7 @@ class Agent_2threshold:
         straddle_price = data["Call_Close"] + data["Put_Close"]
         prev_straddle = self.prev_data["Call_Close"] + self.prev_data["Put_Close"]
         dS = data["Stock_Close"] - self.prev_data["Stock_Close"]
-        
+
         div = data.get("Stock_Dividends", 0.0)
         if pd.isna(div):
             div = 0.0
@@ -121,57 +105,64 @@ class Agent_2threshold:
         daily_pnl = (self.num_options * (straddle_price - prev_straddle)
                      + self.num_underlying * dS_adj)
 
-        yesterday_exposure = (abs(self.num_options * prev_straddle) + 
-                              abs(self.num_underlying * self.prev_data["Stock_Close"]))
-
+        yesterday_exposure = (abs(self.num_options * prev_straddle)
+                              + abs(self.num_underlying * self.prev_data["Stock_Close"]))
         simple_return = daily_pnl / yesterday_exposure if yesterday_exposure > 0 else 0.0
-        # Store log return for additive time aggregation.
         safe_simple_return = max(simple_return, -0.999999999)
         daily_return = np.log1p(safe_simple_return)
 
         self.PnL.append(daily_pnl)
         self.Return.append(daily_return)
 
-        # --- Greek attribution (Taylor expansion with prev-day Greeks) ---
-        def _s(v):
+        # --- Full-repricing attribution ---
+        K_curr, exp_curr = self._get_K_expiry(data)
+        K_prev, exp_prev = self._get_K_expiry(self.prev_data)
+        K = K_curr or K_prev
+        expiry = exp_curr or exp_prev
+
+        if K is None or expiry is None:
+            self._store_attr(_zero_attr(), dS_adj)
+            return
+
+        prev_date = pd.to_datetime(self.prev_data["Date"]).date()
+        curr_date = pd.to_datetime(data["Date"]).date()
+        T0 = ttm_trading(prev_date, expiry)
+        T1 = ttm_trading(curr_date, expiry)
+
+        def _f(v):
             return float(v) if pd.notna(v) and np.isfinite(v) else 0.0
-            
-        def _diff(curr, prev):
-            if pd.notna(curr) and np.isfinite(curr) and pd.notna(prev) and np.isfinite(prev):
-                return float(curr) - float(prev)
-            return 0.0
 
-        d_sigma_raw = _diff(data["Straddle_imp_vol"], self.prev_data["Straddle_imp_vol"])
-        d_sigma = np.clip(d_sigma_raw, -self._dsigma_cap, self._dsigma_cap)
-        dr = _diff(data["r"], self.prev_data["r"])
-        dt = self._time_fraction(self.prev_data["Date"], data["Date"])
+        attr = full_reval_attribution(
+            S0=_f(self.prev_data["Stock_Close"]),
+            S1=_f(data["Stock_Close"]),
+            K=K,
+            T0=T0,
+            T1=T1,
+            r0=_f(self.prev_data["r"]),
+            r1=_f(data["r"]),
+            sig0=_f(self.prev_data["Straddle_imp_vol"]),
+            sig1=_f(data["Straddle_imp_vol"]),
+            market_straddle_change=straddle_price - prev_straddle,
+        )
+        self._store_attr(attr, dS_adj)
 
-        option_delta = self.num_options * _s(self.prev_data["Straddle_Delta"])
-        if self.delta_hedge:
-            actual_delta_exposure = option_delta + self.num_underlying
-        else:
-            actual_delta_exposure = option_delta
+    def _store_attr(self, attr, dS_adj):
+        option_delta_pnl = self.num_options * attr["delta"]
+        hedge_pnl = self.num_underlying * dS_adj
 
-        delta_pnl = option_delta * dS + self.num_underlying * dS_adj
-        gamma_pnl = 0.5 * self.num_options * _s(self.prev_data["Straddle_Gamma"]) * dS ** 2
-        vega_pnl = self.num_options * _s(self.prev_data["Straddle_Vega"]) * d_sigma
-        theta_pnl = self.num_options * _s(self.prev_data["Straddle_Theta"]) * dt
-        vanna_pnl = self.num_options * _s(self.prev_data["Straddle_Vanna"]) * dS * d_sigma
-        volga_pnl = 0.5 * self.num_options * _s(self.prev_data["Straddle_Volga"]) * d_sigma ** 2
-        rho_pnl = self.num_options * _s(self.prev_data["Straddle_Rho"]) * dr * 100
+        prev_straddle_delta = float(self.prev_data.get("Straddle_Delta", 0.0) or 0.0)
+        option_delta_exp = self.num_options * prev_straddle_delta
+        actual_delta_exp = (option_delta_exp + self.num_underlying) if self.delta_hedge else option_delta_exp
 
-        attributed = (delta_pnl + gamma_pnl + vega_pnl + theta_pnl
-                      + vanna_pnl + volga_pnl + rho_pnl)
-
-        self.actual_delta.append(actual_delta_exposure)
-        self.delta_attribute.append(delta_pnl)
-        self.gamma_attribute.append(gamma_pnl)
-        self.vega_attribute.append(vega_pnl)
-        self.theta_attribute.append(theta_pnl)
-        self.vanna_attribute.append(vanna_pnl)
-        self.volga_attribute.append(volga_pnl)
-        self.rho_attribute.append(rho_pnl)
-        self.residual.append(daily_pnl - attributed)
+        self.actual_delta.append(actual_delta_exp)
+        self.delta_attribute.append(option_delta_pnl + hedge_pnl)
+        self.gamma_attribute.append(self.num_options * attr["gamma"])
+        self.vega_attribute.append(self.num_options * attr["vega"])
+        self.theta_attribute.append(self.num_options * attr["theta"])
+        self.vanna_attribute.append(self.num_options * attr["vanna"])
+        self.volga_attribute.append(self.num_options * attr["volga"])
+        self.rho_attribute.append(self.num_options * attr["rho"])
+        self.residual.append(self.num_options * attr["residual"])
 
     def _append_zeros(self):
         for lst in (self.PnL, self.Return, self.actual_delta,
@@ -219,33 +210,75 @@ class Agent_2threshold:
 
         self.prev_data = data
 
+    def _trade_underlying(self, target_underlying, spot_price):
+        curr = float(self.num_underlying)
+        target = float(target_underlying)
+        trade_qty = target - curr
+        if abs(trade_qty) <= 1e-12:
+            return 0.0
+
+        spot = float(spot_price)
+        realized = 0.0
+        curr_abs = abs(curr)
+        avg = float(self._hedge_avg_price)
+
+        if curr_abs <= 1e-12:
+            self._hedge_avg_price = spot if abs(target) > 1e-12 else 0.0
+        elif curr * trade_qty >= 0:
+            new_abs = abs(target)
+            if new_abs <= 1e-12:
+                self._hedge_avg_price = 0.0
+            else:
+                self._hedge_avg_price = (avg * curr_abs + spot * abs(trade_qty)) / new_abs
+        else:
+            close_qty = min(curr_abs, abs(trade_qty))
+            if curr > 0:
+                realized = (spot - avg) * close_qty
+            else:
+                realized = (avg - spot) * close_qty
+
+            if abs(target) <= 1e-12:
+                self._hedge_avg_price = 0.0
+            elif curr * target > 0:
+                self._hedge_avg_price = avg
+            else:
+                self._hedge_avg_price = spot
+
+        self.num_underlying = target
+        self._realized_hedge_pnl += realized
+        return realized
+
     def long_position(self, data):
         self.num_options = 1
         self.entry_straddle_price = data["Call_Close"] + data["Put_Close"]
         if self.delta_hedge:
-            self.num_underlying = -data["Straddle_Delta"]
+            self._trade_underlying(-data["Straddle_Delta"], data["Stock_Close"])
         self._log_transaction(data, "long")
 
     def short_position(self, data):
         self.num_options = -1
         self.entry_straddle_price = data["Call_Close"] + data["Put_Close"]
         if self.delta_hedge:
-            self.num_underlying = data["Straddle_Delta"]
+            self._trade_underlying(data["Straddle_Delta"], data["Stock_Close"])
         self._log_transaction(data, "short")
 
     def close_position(self, data=None):
         was_open = self.num_options != 0
+        hedge_realized = 0.0
+        if was_open and data is not None and self.delta_hedge:
+            hedge_realized = self._trade_underlying(0.0, data["Stock_Close"])
         self.num_options = 0
         self.num_underlying = 0
         self.entry_straddle_price = 0.0
         if was_open and data is not None:
-            self._log_transaction(data, "close")
+            self._log_transaction(data, "close", earned=hedge_realized)
 
     def rehedge(self, data):
         net_delta = self.num_options * data["Straddle_Delta"] + self.num_underlying
         if abs(net_delta) > self.rehedge_threshold:
-            self.num_underlying = -self.num_options * data["Straddle_Delta"]
-            self._log_transaction(data, "rehedge")
+            target_underlying = -self.num_options * data["Straddle_Delta"]
+            hedge_realized = self._trade_underlying(target_underlying, data["Stock_Close"])
+            self._log_transaction(data, "rehedge", earned=hedge_realized)
 
     def get_result(self):
         """
@@ -267,7 +300,6 @@ class Agent_2threshold:
             "return": self.Return,
             "actual_delta": self.actual_delta,
             "position_state_for_pnl": self.position_state_for_pnl,
-            "theta_time_basis": self.theta_time_basis,
         }
 
     def regime_attribution_summary(self, include_flat=False):
