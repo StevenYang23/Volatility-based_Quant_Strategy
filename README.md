@@ -31,7 +31,7 @@ All agents accept these parameters:
 | `display_name` | Label used in plots and stats tables | agent-specific |
 | `allow_short` | Whether the agent can sell straddles | `True` |
 | `delta_hedge` | Whether to delta-hedge positions | `True` |
-| `rehedge_threshold` | Net delta magnitude that triggers a re-hedge | `0.5` |
+| `rehedge_threshold` | Net delta magnitude that triggers a re-hedge | `0.05` |
 
 ### Signal Logic
 
@@ -83,6 +83,15 @@ Builds a single CSV per symbol at `DataSet/{symbol}.csv`:
 4. Generate performance stats and visualizations
 
 ### Backtest Snapshot
+
+Snapshot context (for reproducibility):
+- Dataset: `DataSet/QQQ.csv`
+- Shared setting: `delta_hedge=True`, `rehedge_threshold=0.05`
+- Agent-specific settings used:
+  - `Agent_hardThreshold`: `k=1`
+  - `Agent_Perc`: `entry_percentile=0.2`
+  - `Agent_2threshold`: `k_high=1.4`, `k_low=0.6`
+  - `Agent_Garch`: `z_entry=0.5`
 
 | Agent | Win Rate | Sharpe Ratio | Sortino Ratio | Annual Return | Annual Volatility | Max Drawdown | Calmar Ratio | Kelly's Criteria |
 | :--- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
