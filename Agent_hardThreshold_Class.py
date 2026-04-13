@@ -36,7 +36,6 @@ class Agent_hardThreshold:
         self.vanna_attribute = []
         self.volga_attribute = []
         self.rho_attribute = []
-        self.hedge_attribute = []
         self.residual = []
         self.position_state_for_pnl = []
         self._init_trade_log()
@@ -147,13 +146,12 @@ class Agent_hardThreshold:
     ):
         self.actual_delta.append(actual_delta_exp)
         self.delta_attribute.append(delta_pnl)
-        self.gamma_attribute.append(gamma_pnl)
+        self.gamma_attribute.append(gamma_pnl + hedge_pnl)
         self.vega_attribute.append(vega_pnl)
         self.theta_attribute.append(theta_pnl)
         self.vanna_attribute.append(vanna_pnl)
         self.volga_attribute.append(volga_pnl)
         self.rho_attribute.append(rho_pnl)
-        self.hedge_attribute.append(hedge_pnl)
         self.residual.append(residual_pnl)
 
     def _append_zeros(self):
@@ -161,7 +159,7 @@ class Agent_hardThreshold:
                     self.delta_attribute, self.gamma_attribute,
                     self.vega_attribute, self.theta_attribute,
                     self.vanna_attribute, self.volga_attribute,
-                    self.rho_attribute, self.hedge_attribute, self.residual):
+                    self.rho_attribute, self.residual):
             lst.append(0.0)
 
     def trade(self, data):
@@ -280,7 +278,6 @@ class Agent_hardThreshold:
                 "vanna": self.vanna_attribute,
                 "volga": self.volga_attribute,
                 "rho": self.rho_attribute,
-                "hedge": self.hedge_attribute,
                 "residual": self.residual,
             },
             "pnl": self.PnL,
@@ -305,7 +302,6 @@ class Agent_hardThreshold:
                 "vanna": self.vanna_attribute,
                 "volga": self.volga_attribute,
                 "rho": self.rho_attribute,
-                "hedge": self.hedge_attribute,
                 "residual": self.residual,
             }
         )
@@ -325,7 +321,6 @@ class Agent_hardThreshold:
             vanna=("vanna", "sum"),
             volga=("volga", "sum"),
             rho=("rho", "sum"),
-            hedge=("hedge", "sum"),
             residual=("residual", "sum"),
         )
         summary.index = summary.index.map({-1: "short_straddle", 0: "flat", 1: "long_straddle"})
