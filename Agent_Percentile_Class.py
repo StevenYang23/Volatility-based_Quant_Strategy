@@ -18,10 +18,11 @@ class Agent_Percentile:
         self.delta_hedge = delta_hedge
         self.rehedge_threshold = rehedge_threshold
         self.allow_short = allow_short
+        self.option_lot_size = 100
         if not (0.0 < self.entry_low_percentile < 0.5):
             raise ValueError("entry_low_percentile must be in (0, 0.5).")
 
-        self.num_options = 0      # +1 long straddle, -1 short straddle, 0 flat
+        self.num_options = 0      # +1 long lot, -1 short lot, 0 flat
         self.num_underlying = 0   # shares held for delta hedge
         self.entry_straddle_price = 0.0
         self._hedge_avg_price = 0.0
@@ -85,10 +86,11 @@ class Agent_Percentile:
             div = 0.0
         dS_adj = dS + div
 
-        daily_pnl = (self.num_options * (straddle_price - prev_straddle)
+        option_units = self.num_options * self.option_lot_size
+        daily_pnl = (option_units * (straddle_price - prev_straddle)
                      + self.num_underlying * dS_adj)
 
-        yesterday_exposure = (abs(self.num_options * prev_straddle)
+        yesterday_exposure = (abs(option_units * prev_straddle)
                               + abs(self.num_underlying * self.prev_data["Stock_Close"]))
         simple_return = daily_pnl / yesterday_exposure if yesterday_exposure > 0 else 0.0
         safe_simple_return = max(simple_return, -0.999999999)
@@ -107,7 +109,7 @@ class Agent_Percentile:
         dt_days = np.busday_count(prev_date, curr_date)
         dt = (dt_days if dt_days > 0 else 1) / 252.0
 
-        q = self.num_options
+        q = self.num_options * self.option_lot_size
         h = self.num_underlying
         prev_delta = _f(self.prev_data.get("Straddle_Delta"))
         delta_pnl = q * prev_delta * dS
@@ -240,10 +242,10 @@ class Agent_Percentile:
         self.prev_data = data
 
     def _trade_underlying(self, target_underlying, spot_price):
-        curr = float(self.num_underlying)
-        target = float(target_underlying)
+        curr = int(self.num_underlying)
+        target = int(np.rint(target_underlying))
         trade_qty = target - curr
-        if abs(trade_qty) <= 1e-12:
+        if trade_qty == 0:
             return 0.0
 
         spot = float(spot_price)
@@ -281,14 +283,18 @@ class Agent_Percentile:
         self.num_options = 1
         self.entry_straddle_price = data["Call_Close"] + data["Put_Close"]
         if self.delta_hedge:
-            self._trade_underlying(-data["Straddle_Delta"], data["Stock_Close"])
+            self._trade_underlying(
+                -self.option_lot_size * data["Straddle_Delta"], data["Stock_Close"]
+            )
         self._log_transaction(data, "long")
 
     def short_position(self, data):
         self.num_options = -1
         self.entry_straddle_price = data["Call_Close"] + data["Put_Close"]
         if self.delta_hedge:
-            self._trade_underlying(data["Straddle_Delta"], data["Stock_Close"])
+            self._trade_underlying(
+                self.option_lot_size * data["Straddle_Delta"], data["Stock_Close"]
+            )
         self._log_transaction(data, "short")
 
     def close_position(self, data=None):
@@ -303,9 +309,12 @@ class Agent_Percentile:
             self._log_transaction(data, "close", earned=hedge_realized)
 
     def rehedge(self, data):
-        net_delta = self.num_options * data["Straddle_Delta"] + self.num_underlying
+        net_delta = (
+            self.num_options * self.option_lot_size * data["Straddle_Delta"]
+            + self.num_underlying
+        )
         if abs(net_delta) > self.rehedge_threshold:
-            target_underlying = -self.num_options * data["Straddle_Delta"]
+            target_underlying = -self.num_options * self.option_lot_size * data["Straddle_Delta"]
             hedge_realized = self._trade_underlying(target_underlying, data["Stock_Close"])
             self._log_transaction(data, "rehedge", earned=hedge_realized)
 
