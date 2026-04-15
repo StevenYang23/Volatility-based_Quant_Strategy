@@ -10,7 +10,7 @@ except ImportError:
     ql = None
 
 
-class Agent_Heston:
+class Agent_Alt:
     _MIN_SPREAD_OBS = 20
     _Z_ROLLING_WINDOW = 20
     _INTEGRAL_UPPER = 50.0
@@ -20,11 +20,12 @@ class Agent_Heston:
 
     def __init__(
         self,
-        display_name="Agent_Heston",
+        display_name="Agent_Alt",
         z_entry=0.5,
+        vrp_filter_percentile=0.2,
         allow_short=True,
         delta_hedge=True,
-        rehedge_threshold=0.05,
+        rehedge_threshold=0.05
     ):
         self.display_name = display_name
         self.delta_hedge = delta_hedge
@@ -35,6 +36,9 @@ class Agent_Heston:
         self.full_calibrate_every = max(int(5), 1)
         self.rho_tail_threshold = float(-0.8)
         self.max_full_calib_failures = max(int(3), 1)
+        self.vrp_filter_percentile = float(np.clip(vrp_filter_percentile, 0.0, 0.49))
+        self.vrp_filter_window = max(int(60), 20)
+        self.vrp_filter_min_obs = max(int(20), 5)
         self.trading_days_per_year = 252
         self.option_lot_size = 100
 
@@ -71,8 +75,10 @@ class Agent_Heston:
         self.model_iv_history = []
         self.feller_status_history = []
         self.tail_risk_blocked_history = []
+        self.vrp_filter_blocked_history = []
         self.calibration_mode_history = []
         self.full_calib_failure_streak_history = []
+        self._vrp_history = []
         self._init_trade_log()
 
     # ------------------------------------------------------------------
@@ -223,8 +229,37 @@ class Agent_Heston:
         self.model_iv_history.append(np.nan)
         self.feller_status_history.append(np.nan)
         self.tail_risk_blocked_history.append(False)
+        self.vrp_filter_blocked_history.append(False)
         self.calibration_mode_history.append("none")
         self.full_calib_failure_streak_history.append(self._consecutive_full_calib_failures)
+
+    @staticmethod
+    def _set_last_or_append(target_list, value):
+        if len(target_list) == 0:
+            target_list.append(value)
+        else:
+            target_list[-1] = value
+
+    def _vrp_filter_allows(self, direction, curr_vrp):
+        if direction == 0:
+            return True, np.nan, np.nan
+        if not np.isfinite(curr_vrp):
+            return True, np.nan, np.nan
+        hist = np.asarray(self._vrp_history[-self.vrp_filter_window :], dtype=float)
+        hist = hist[np.isfinite(hist)]
+        if hist.size < self.vrp_filter_min_obs:
+            return True, np.nan, np.nan
+
+        low_th = float(np.nanpercentile(hist, self.vrp_filter_percentile * 100.0))
+        high_th = float(np.nanpercentile(hist, (1.0 - self.vrp_filter_percentile) * 100.0))
+
+        if direction > 0 and curr_vrp >= high_th:
+            # Block long-vol when VRP is already in the top tail.
+            return False, low_th, high_th
+        if direction < 0 and curr_vrp <= low_th:
+            # Block short-vol when VRP is already in the bottom tail.
+            return False, low_th, high_th
+        return True, low_th, high_th
 
     @staticmethod
     def _feller_ratio(kappa, theta, sigma):
@@ -572,6 +607,10 @@ class Agent_Heston:
     def trade(self, data):
         self._compute_daily_pnl(data)
 
+        curr_vrp = float(data.get("VRP", np.nan))
+        if np.isfinite(curr_vrp):
+            self._vrp_history.append(curr_vrp)
+
         if data["Force_Close"]:
             self.close_position(data)
             self._append_signal_nan(direction=0)
@@ -616,7 +655,7 @@ class Agent_Heston:
             ):
                 self.close_position(data)
             self._append_signal_nan(direction=0)
-            self.calibration_mode_history[-1] = calibration_mode
+            self._set_last_or_append(self.calibration_mode_history, calibration_mode)
             self._days_since_full_calib += 1
             self.prev_data = data
             return
@@ -679,8 +718,15 @@ class Agent_Heston:
             direction = 0
             tail_risk_blocked = True
 
+        vrp_filter_blocked = False
+        allow_direction, _, _ = self._vrp_filter_allows(direction, curr_vrp)
+        if not allow_direction:
+            direction = 0
+            vrp_filter_blocked = True
+
         self.heston_direction_signal.append(direction)
-        self.tail_risk_blocked_history[-1] = tail_risk_blocked
+        self._set_last_or_append(self.tail_risk_blocked_history, tail_risk_blocked)
+        self._set_last_or_append(self.vrp_filter_blocked_history, vrp_filter_blocked)
 
         target = 0
         if direction > 0:
@@ -810,6 +856,7 @@ class Agent_Heston:
             "heston_model_iv": self.model_iv_history,
             "feller_status": self.feller_status_history,
             "tail_risk_blocked": self.tail_risk_blocked_history,
+            "vrp_filter_blocked": self.vrp_filter_blocked_history,
             "calibration_mode": self.calibration_mode_history,
             "full_calib_failure_streak": self.full_calib_failure_streak_history,
         }
