@@ -33,6 +33,12 @@ All agents accept these parameters:
 | `delta_hedge` | Whether to delta-hedge positions | `True` |
 | `rehedge_threshold` | Net delta magnitude that triggers a re-hedge | `0.05` |
 
+### Shared Execution Rules
+
+- **Position unit**: each options trade is **1 lot = 100 options**
+- **Underlying hedge**: hedge shares are always rounded to an **integer**
+- **Re-hedge PnL**: realized using hedge average entry vs exit price on underlying reductions/flips
+
 ### Signal Logic
 
 | Agent | Long (Buy Vol) | Short (Sell Vol) | Close (Exit) |
@@ -40,16 +46,47 @@ All agents accept these parameters:
 | **`Agent_hardThreshold`**<br>`k=1` | `VRP < Mean - k * Std` | `VRP > Mean + k * Std` | `VRP` crosses `Mean` |
 | **`Agent_Percentile`**<br>`entry_percentile=0.20` | `Z(VRP)` below expanding low percentile | `Z(VRP)` above expanding high percentile | `Z(VRP)` crosses expanding median |
 | **`Agent_2threshold`**<br>`k_high`, `k_low` | `VRP < Mean - k_active * Std`<br>(`k_active = k_high` if 40d\_Std > 20d\_Std, else `k_low`) | `VRP > Mean + k_active * Std`<br>(same regime switch) | `VRP` crosses `Mean` |
-| **`Agent_Garch`**<br>`z_entry=1.0` | z-score of (IV - GARCH\_RV) < `-z_entry` | z-score of (IV - GARCH\_RV) > `+z_entry` | z-score crosses zero |
+| **`Agent_Garch`**<br>`z_entry=1.0` | rolling z-score of (IV - GARCH\_RV) < `-z_entry` | rolling z-score of (IV - GARCH\_RV) > `+z_entry` | z-score crosses zero |
+| **`Agent_Heston`**<br>`z_entry=0.5` | rolling z-score of (IV - `sqrt(theta)`) < `-z_entry` | rolling z-score of (IV - `sqrt(theta)`) > `+z_entry` | z-score crosses zero |
 
 ### Agent_Garch Details
 
-The GARCH agent uses a GARCH(1,1) model to forecast realized volatility, then trades the IV-RV spread:
+The GARCH agent uses a **GJR-GARCH(1,1)** model with **Student-t** innovations, then trades the IV-RV spread:
 
-1. **Fit**: GARCH(1,1) is fit on the trailing 20 trading days of log returns, re-fit every 5 days
-2. **Update**: between re-fits, the conditional variance is rolled forward via the GARCH recursion: `h_{t+1} = omega + alpha * eps_t^2 + beta * h_t`
-3. **Signal**: `spread = IV - sqrt(h) * sqrt(252)`. The z-score of the spread (expanding-window mean & std, min 20 observations) determines entry/exit
+1. **Fit**: GJR-GARCH(1,1) is fit on the trailing 20 trading days of log returns, re-fit every 5 days
+2. **Update**: between re-fits, the conditional variance is rolled forward with asymmetry (negative shocks receive extra gamma loading)
+3. **Forecast horizon alignment**: RV forecast is computed from the **average of a 30-day forward variance path** (to align with ~30D option tenor)
+4. **Signal**: `spread = IV - GARCH_RV_30D`. The z-score of the spread is computed on a **rolling window** (default 60 obs, min 20) for entry/exit
 4. **Fallback**: when `arch` is not installed, an EWMA variance (RiskMetrics, lambda=0.94) is used instead
+
+### Agent_Heston Details
+
+`Agent_Heston` calibrates Heston parameters to current market conditions (ATM inputs) and generates a mean-reversion volatility signal:
+
+1. **Calibration targets**: current `S`, `K`, `T`, `r`, and market `IV` (ATM straddle context)
+2. **Parameters**: calibrates `v0`, `kappa`, `theta`, `sigma`, `rho`
+3. **Pricing engine**:
+   - tries `QuantLib` `AnalyticHestonEngine` first (if installed)
+   - otherwise uses vectorized Heston characteristic-function integration with trapezoidal rule
+4. **Calibration schedule**:
+   - full calibration every `full_calibrate_every` days (default 5)
+   - in-between days only `v0` is updated while structure params are held
+5. **Signal**:
+   - `spread = IV - sqrt(theta)`
+   - rolling z-score (default 20-day window) drives long/short/close
+6. **Risk controls**:
+   - tracks **Feller status** `2*kappa*theta/sigma^2`
+   - blocks new short-vol entries under extreme skew (`rho <= rho_tail_threshold`, default -0.8)
+   - if full calibration fails for `max_full_calib_failures` consecutive attempts (default 3), forces position close
+7. **Rate handling**:
+   - if tenor curve fields (e.g. `r_1m`, `r_3m`, `r_6m`, `r_1y`) are present, interpolates `r` by option tenor
+   - otherwise falls back to `r`
+
+### Deterministic vs Simulation
+
+- `Agent_Garch` and `Agent_Heston` are currently **deterministic model-based** implementations.
+- They do **not** run Monte Carlo multi-path simulation in the present codebase.
+- `Agent_Garch` uses variance recursion / forward variance projection; `Agent_Heston` uses characteristic-function integration (or QuantLib analytic pricing engine when available).
 
 ---
 
@@ -105,7 +142,8 @@ Snapshot context (for reproducibility):
 The project uses **path-wise daily attribution** with **timestep Greeks** (Greeks at time `t` explain PnL from `t -> t+1`).
 
 Let:
-- `q_t`: option position (`+1` long straddle, `-1` short straddle)
+- `q_t`: option lots (`+1` long straddle lot, `-1` short straddle lot)
+- `L`: lot size (`L = 100` options per lot)
 - `h_t`: hedge shares held before move
 - `dS = S_{t+1} - S_t`
 - `dS_adj = dS + dividends`
@@ -116,26 +154,27 @@ Let:
 Daily PnL decomposition:
 
 - **Delta attribution**
-  - `Delta_t = q_t * Straddle_Delta_t * dS`
+  - `Delta_t = (q_t * L) * Delta_eff_t * dS`
+  - where `Delta_eff_t = Straddle_Delta_t` normally, and on re-hedge-trigger days uses midpoint delta `0.5*(Delta_t_prev + Delta_t_curr)` to reduce residual leakage
 - **Gamma attribution (hedge merged in)**
-  - `Gamma_t = q_t * 0.5 * Straddle_Gamma_t * dS^2 + h_t * dS_adj`
+  - `Gamma_t = (q_t * L) * 0.5 * Straddle_Gamma_t * dS^2 + h_t * dS_adj`
   - Note: hedge PnL is intentionally merged into `gamma_attribute`.
 - **Vega attribution**
-  - `Vega_t = q_t * Straddle_Vega_t * dσ`
+  - `Vega_t = (q_t * L) * Straddle_Vega_t * dσ`
 - **Vanna attribution**
-  - `Vanna_t = q_t * Straddle_Vanna_t * dS * dσ`
+  - `Vanna_t = (q_t * L) * Straddle_Vanna_t * dS * dσ`
 - **Volga attribution**
-  - `Volga_t = q_t * 0.5 * Straddle_Volga_t * dσ^2`
+  - `Volga_t = (q_t * L) * 0.5 * Straddle_Volga_t * dσ^2`
 - **Theta attribution**
-  - `Theta_t = q_t * Straddle_Theta_t * dt`
+  - `Theta_t = (q_t * L) * Straddle_Theta_t * dt`
 - **Rho attribution**
-  - `Rho_t = q_t * Straddle_Rho_t * dr * 100`
+  - `Rho_t = (q_t * L) * Straddle_Rho_t * dr * 100`
   - (`Straddle_Rho` is stored per +1 percentage-point rate change.)
 - **Residual**
   - `Residual_t = TotalPnL_t - (Delta_t + Gamma_t + Vega_t + Vanna_t + Volga_t + Theta_t + Rho_t)`
 
 where:
-- `TotalPnL_t = q_t * (StraddlePrice_{t+1} - StraddlePrice_t) + h_t * dS_adj`
+- `TotalPnL_t = (q_t * L) * (StraddlePrice_{t+1} - StraddlePrice_t) + h_t * dS_adj`
 
 This setup preserves the daily identity:
 - `Delta + Gamma + Vega + Vanna + Volga + Theta + Rho + Residual = Total PnL`

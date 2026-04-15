@@ -106,7 +106,14 @@ class Agent_hardThreshold:
         q = self.num_options * self.option_lot_size
         h = self.num_underlying
         prev_delta = _f(self.prev_data.get("Straddle_Delta"))
-        delta_pnl = q * prev_delta * dS
+        curr_delta = _f(data.get("Straddle_Delta"))
+        effective_delta = prev_delta
+        if self.delta_hedge:
+            end_net_delta = q * curr_delta + h
+            if abs(end_net_delta) > self.rehedge_threshold:
+                # Rehedge day: use midpoint delta to reduce attribution leakage to residual.
+                effective_delta = 0.5 * (prev_delta + curr_delta)
+        delta_pnl = q * effective_delta * dS
         gamma_pnl = 0.5 * q * _f(self.prev_data.get("Straddle_Gamma")) * (dS ** 2)
         vega_pnl = q * _f(self.prev_data.get("Straddle_Vega")) * d_sigma
         vanna_pnl = q * _f(self.prev_data.get("Straddle_Vanna")) * dS * d_sigma
