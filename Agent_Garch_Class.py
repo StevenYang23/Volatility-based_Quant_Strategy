@@ -13,6 +13,8 @@ class Agent_Garch:
     _LOOKBACK = 20
     _REFIT_EVERY = 5
     _MIN_SPREAD_OBS = 20
+    _Z_ROLLING_WINDOW = 60
+    _FORECAST_HORIZON_DAYS = 30
 
     def __init__(
         self,
@@ -52,7 +54,9 @@ class Agent_Garch:
 
         self._omega = np.nan
         self._alpha = np.nan
+        self._gamma = np.nan
         self._beta = np.nan
+        self._nu = np.nan
         self._h = np.nan
         self._days_since_fit = self._REFIT_EVERY
         self._stock_close_buf = []
@@ -216,7 +220,9 @@ class Agent_Garch:
                 var = 0.94 * var + 0.06 * r * r
             self._omega = 0.0
             self._alpha = 0.06
+            self._gamma = 0.0
             self._beta = 0.94
+            self._nu = np.nan
             self._h = var
             self._days_since_fit = 0
             return True
@@ -228,14 +234,16 @@ class Agent_Garch:
                     log_ret_pct,
                     mean="Zero",
                     vol="GARCH",
-                    p=1, q=1,
-                    dist="normal",
+                    p=1, o=1, q=1,
+                    dist="t",
                     rescale=False,
                 )
                 fit = model.fit(disp="off")
             self._omega = float(fit.params.get("omega", 0.0))
             self._alpha = float(fit.params.get("alpha[1]", 0.06))
+            self._gamma = float(fit.params.get("gamma[1]", 0.0))
             self._beta = float(fit.params.get("beta[1]", 0.94))
+            self._nu = float(fit.params.get("nu", np.nan))
             cond_vol = fit.conditional_volatility
             self._h = (
                 float(cond_vol.iloc[-1]) ** 2
@@ -251,12 +259,30 @@ class Agent_Garch:
         if np.isnan(self._omega):
             return
         eps_pct = daily_log_return * 100.0
-        self._h = self._omega + self._alpha * eps_pct**2 + self._beta * self._h
+        asym = self._gamma if eps_pct < 0 else 0.0
+        self._h = self._omega + (self._alpha + asym) * eps_pct**2 + self._beta * self._h
 
     def _garch_rv_annualized(self):
         if np.isnan(self._h) or self._h <= 0:
             return np.nan
-        sigma_daily = np.sqrt(self._h) / 100.0
+        h_step = float(self._h)
+        omega = float(self._omega) if np.isfinite(self._omega) else 0.0
+        alpha = float(self._alpha) if np.isfinite(self._alpha) else 0.0
+        gamma = float(self._gamma) if np.isfinite(self._gamma) else 0.0
+        beta = float(self._beta) if np.isfinite(self._beta) else 0.0
+        phi = alpha + beta + 0.5 * gamma
+        phi = min(max(phi, 0.0), 1.2)
+
+        horizon = int(self._FORECAST_HORIZON_DAYS)
+        h_path = []
+        for _ in range(horizon):
+            h_step = omega + phi * h_step
+            if not np.isfinite(h_step) or h_step <= 0:
+                return np.nan
+            h_path.append(h_step)
+
+        avg_daily_var_pct = float(np.mean(h_path))
+        sigma_daily = np.sqrt(avg_daily_var_pct) / 100.0
         return sigma_daily * np.sqrt(self.trading_days_per_year)
 
     # ------------------------------------------------------------------
@@ -313,8 +339,14 @@ class Agent_Garch:
             self.prev_data = data
             return
 
-        spread_arr = np.asarray(self._spread_history, dtype=float)
+        spread_arr = np.asarray(
+            self._spread_history[-self._Z_ROLLING_WINDOW:], dtype=float
+        )
         spread_arr = spread_arr[np.isfinite(spread_arr)]
+        if spread_arr.size < 2:
+            self.garch_direction_signal.append(0)
+            self.prev_data = data
+            return
         mu = float(np.mean(spread_arr))
         sigma = float(np.std(spread_arr, ddof=1))
         if sigma < 1e-12:
