@@ -37,45 +37,20 @@ All agents accept these parameters:
 
 ### Garch / LongTerm entry: what “Zscore” means
 
-**IV** is straddle implied vol (`Straddle_imp_vol`). **RV** is realized vol from the panel (`RV`). **GARCH_RV** is the Garch agent’s model-based forecast of realized vol for that day.
+Let **something** be **IV − GARCH_RV** (Garch) or **IV − meanRV** (LongTerm), with **IV** = `Straddle_imp_vol`, **GARCH_RV** from the model, and **meanRV** = mean of the prior `long_term_window` daily **RV** values (today’s **RV** is not in **meanRV** for that day).
 
-**`Agent_LongTerm`** uses **meanRV**: on each day, **meanRV** is the arithmetic mean of the **prior `long_term_window`** daily **RV** values already in history. That day’s **RV** is appended **after** the signal is computed, so it is **not** inside **meanRV** for that same day.
+**Zscore(something)** = (**something** − **20-day rolling mean of something**) / (**20-day rolling std of something**). **`entry_threshold`** is in those dimensionless Z units.
 
-Each agent first forms a **daily difference** (same units as IV):
-
-| Agent | Difference the Zscore is built from |
-| :--- | :--- |
-| **`Agent_Garch`** | **IV − GARCH_RV** |
-| **`Agent_LongTerm`** | **IV − meanRV** |
-
-Those differences form a **time series**. The code then computes a **Zscore** of **today’s** difference vs the **recent history of that same series**:
-
-- After at least **20** stored values of the difference exist, take the **rolling sample mean** and **rolling sample standard deviation** (sample std, ddof = 1) over the **last 20** values of the series (**including** today’s difference in that window). Divide **(today’s difference − rolling mean) / rolling std** when rolling std is positive.
-
-So in shorthand:
-
-- **Garch:** **Zscore(IV − GARCH_RV)** with **rolling mean** and **rolling std** of **(IV − GARCH_RV)** over the last **20** points (after **20** warmup observations).
-- **LongTerm:** **Zscore(IV − meanRV)** with **rolling mean** and **rolling std** of **(IV − meanRV)** over the last **20** points (after **20** warmup observations).
-
-This is **not** a single z-score of one day’s value against a long-run global distribution of IV or RV; it is **always** “standardize today’s **IV minus benchmark** using the **rolling mean and rolling std** of **that difference** over the recent past.”
-
-**`entry_threshold`** applies only to **that** Zscore: it is **dimensionless** (same units as the Zscore), not volatility points, not VRP, not dollars.
-
-**Entries (Garch and LongTerm, when `allow_short` allows shorts):**
-
-- Long straddle: **Zscore < −entry_threshold**
-- Short straddle: **Zscore > +entry_threshold**
-
-**Exits (Garch and LongTerm):** unwind when the Zscore **crosses 0** toward flat (long exits when Zscore **≥ 0**, short when **≤ 0** in the code).
+**Entries:** long when **Zscore < −entry_threshold**; short when **Zscore > +entry_threshold** if `allow_short`. **Exits:** when **Zscore** crosses **0** (long at **≥ 0**, short at **≤ 0** in code).
 
 ### Signal Logic (summary table)
 
 | Agent | Long (Buy Vol) | Short (Sell Vol) | Close (Exit) |
 | :--- | :--- | :--- | :--- |
-| **`Agent_hardThreshold`** … | `VRP < Mean − k·Std` | `VRP > Mean + k·Std` | `VRP` crosses `Mean` |
-| **`Agent_Percentile`** … | expanding low on `Z(VRP)` | expanding high on `Z(VRP)` | `Z(VRP)` crosses expanding median |
-| **`Agent_Garch`** | **Zscore(IV − GARCH_RV) < −entry_threshold** | **Zscore(IV − GARCH_RV) > +entry_threshold** if `allow_short` | Zscore **crosses 0** |
-| **`Agent_LongTerm`** | **Zscore(IV − meanRV) < −entry_threshold** | **Zscore(IV − meanRV) > +entry_threshold** if `allow_short` | Zscore **crosses 0** |
+| **`Agent_hardThreshold`** | **Zscore(VRP) < −k** | **Zscore(VRP) > +k** if `allow_short` | **Zscore(VRP)** crosses **0** |
+| **`Agent_Percentile`** | **Zscore(VRP)** at/below expanding **low** percentile of past Zscores | **Zscore(VRP)** at/above expanding **high** percentile | **Zscore(VRP)** crosses expanding **median** |
+| **`Agent_Garch`** | **Z-Score(IV − GARCH_RV) < −entry_threshold** | **Zscore(IV − GARCH_RV) > +entry_threshold** if `allow_short` | Zscore **crosses 0** |
+| **`Agent_LongTerm`** | **Z-Score(IV − meanRV) < −entry_threshold** | **Zscore(IV − meanRV) > +entry_threshold** if `allow_short` | Zscore **crosses 0** |
 
 ### Agent-specific parameters
 
