@@ -41,6 +41,27 @@ All agents accept these parameters:
 - **Underlying hedge**: hedge shares are always rounded to an **integer**
 - **Re-hedge PnL**: realized using hedge average entry vs exit price on underlying reductions/flips
 
+### Rolling z-score and `entry_threshold` (Garch, LongTerm, Agent_Myself entry)
+
+For **`Agent_Garch`**, **`Agent_LongTerm`**, and the **entry signal** of **`Agent_Myself`**, the name **`entry_threshold` means a threshold in units of a rolling z-score**, not a raw VRP level, not a raw IV spread in volatility points, and not dollars.
+
+Each day:
+
+1. **Level spread** `s_t` is defined (model-specific): e.g. `IV − GARCH_RV` or `IV − long_run_mean_IV`.
+2. A **rolling window** of recent `s` values (defaults: at least **20** observations of `s` before any trade; z uses the last **20** spreads) yields a mean `μ_t` and sample standard deviation `σ_t` (with `σ_t > 0`).
+3. **Standardized signal**  
+   `z_t = (s_t − μ_t) / σ_t`  
+   So `z_t` is the usual **cross-sectional-style z-score** of *today’s* spread vs the *recent distribution of spreads*.
+
+**Entries (Garch & LongTerm):**
+
+- **Long vol (buy straddle):** `z_t < −entry_threshold`
+- **Short vol (sell straddle):** `z_t > +entry_threshold` (if `allow_short`)
+
+**Exits (Garch & LongTerm):** position is closed when **`z_t` crosses 0** back toward neutral (same side rule as in code: long unwinds when `z ≥ 0`, short when `z ≤ 0`).
+
+**`Agent_Myself`:** uses the **same** `s_t`, `μ_t`, `σ_t`, and `z_t` as `Agent_LongTerm` for **opening** a long straddle only when `z_t < −entry_threshold`. It does **not** use `z` for exit; legs are closed with **per-leg stop-loss / take-profit** (and breakeven on the last leg). **`stop_loss_pct` / `stop_profit_pct` are fractions of premium (e.g. `0.30` = 30%), not z-units.**
+
 ### Signal Logic
 
 | Agent | Long (Buy Vol) | Short (Sell Vol) | Close (Exit) |
@@ -48,15 +69,17 @@ All agents accept these parameters:
 | **`Agent_hardThreshold`**<br>`k=1` | `VRP < Mean - k * Std` | `VRP > Mean + k * Std` | `VRP` crosses `Mean` |
 | **`Agent_Percentile`**<br>`entry_percentile=0.20` | `Z(VRP)` below expanding low percentile | `Z(VRP)` above expanding high percentile | `Z(VRP)` crosses expanding median |
 | **`Agent_2threshold`**<br>`k_high`, `k_low` | `VRP < Mean - k_active * Std`<br>(`k_active = k_high` if 40d\_Std > 20d\_Std, else `k_low`) | `VRP > Mean + k_active * Std`<br>(same regime switch) | `VRP` crosses `Mean` |
-| **`Agent_Garch`**<br>`entry_threshold=1.0` (typical backtests use `0.5`) | rolling z-score of (IV − GARCH RV) < `−entry_threshold` | rolling z-score of (IV − GARCH RV) > `+entry_threshold` | z-score crosses zero |
-| **`Agent_LongTerm`**<br>`entry_threshold=0.5`, `long_term_window=126` | rolling z-score of (IV − long-run IV mean) < `−entry_threshold` | rolling z-score of (IV − long-run IV mean) > `+entry_threshold` | z-score crosses zero |
+| **`Agent_Garch`**<br>`entry_threshold` = z-band | `z_t < −entry_threshold` on spread `IV − GARCH_RV` | `z_t > +entry_threshold` (if `allow_short`) | `z_t` crosses `0` |
+| **`Agent_LongTerm`**<br>`entry_threshold`, `long_term_window` | `z_t < −entry_threshold` on spread `IV −` long-run IV mean | `z_t > +entry_threshold` (if `allow_short`) | `z_t` crosses `0` |
+| **`Agent_Myself`**<br>same z as LongTerm for **entry** | `z_t < −entry_threshold` → open long straddle | — (no short) | Per-leg **stop-loss / take-profit**; last leg at breakeven; `Force_Close` |
 
 Agent-specific parameters (others use the **Shared Parameters** table):
 
 | Parameter | Agents | Description | Default |
 | :--- | :--- | :--- | :--- |
-| `entry_threshold` | `Agent_Garch`, `Agent_LongTerm` | Magnitude of rolling z-score required to enter long/short vol | Garch `1.0`, LongTerm `0.5` |
-| `long_term_window` | `Agent_LongTerm` | Trading days of **past** straddle IV used for the long-run mean (today excluded) | `126` (min `5`) |
+| `entry_threshold` | `Agent_Garch`, `Agent_LongTerm`, `Agent_Myself` | **Minimum \|z\|** on the rolling z-score (see above) to enter long (`z < −threshold`) or short (`z > +threshold`) where applicable | Garch `1.0`, LongTerm / Myself `0.5` |
+| `long_term_window` | `Agent_LongTerm`, `Agent_Myself` | Trading days of **past** straddle IV used for the long-run mean (today excluded) | `126` (min `5`) |
+| `stop_loss_pct`, `stop_profit_pct` | `Agent_Myself` only | Leg exit vs **that leg’s entry price** as a **fraction** (not z) | `0.30` each |
 
 ### Agent_Garch Details
 
@@ -66,7 +89,7 @@ The GARCH agent uses a **GJR-GARCH(1,1)** model with **Student-t** innovations, 
 2. **Update**: between re-fits, the conditional variance is rolled forward with asymmetry (negative shocks receive extra gamma loading)
 3. **Forecast horizon**: the forward variance path length matches **trading days from valuation `Date` to option `Expiry`** (`numpy.busday_count`). If dates are missing, a **30-day** fallback is used
 4. **Annualized RV forecast**: mean variance along that path, converted to annualized vol (same scale as `Straddle_imp_vol`)
-5. **Signal**: `spread = IV − GARCH_RV`. Entry uses the rolling **z-score** of `spread` vs recent spread history: requires at least **20** spread observations; z-window **20**; compare `z` to **`entry_threshold`**. Exit when z crosses **0** (same convention as other z-based agents)
+5. **Signal**: `spread = IV − GARCH_RV`. Build **`z_t`** from the last **20** spreads (after at least **20** stored spreads). **Enter** long when `z_t < −entry_threshold`, short when `z_t > +entry_threshold` (if `allow_short`). **`entry_threshold` counts in z-units.** Exit when **`z_t` crosses 0** toward flat
 6. **Fallback**: when `arch` is not installed, an EWMA variance (RiskMetrics, λ = 0.94) is used instead
 
 ### Agent_LongTerm Details
@@ -75,15 +98,23 @@ The GARCH agent uses a **GJR-GARCH(1,1)** model with **Student-t** innovations, 
 
 1. **Long-run mean**: on each day, the benchmark is the **mean of the prior `long_term_window` daily values of `Straddle_imp_vol`** (today’s IV is **not** included)
 2. **Signal**: `spread = IV_today − long_run_mean`
-3. **Entry / exit**: same rolling **z-score** machinery as `Agent_Garch`—min **20** spreads before trading, **20-day** z-window, **`entry_threshold`** for entries, exit when z crosses **0**
+3. **Entry / exit**: same **`z_t`** construction as **Rolling z-score and `entry_threshold`**—min **20** spreads, **20**-observation z-window, **`entry_threshold` in z-units** for entries, exit when **`z_t` crosses 0**
 
 For backward compatibility, `Agent_Heston_Class.py` re-exports **`Agent_Heston = Agent_LongTerm`** (same class). Prefer `from Agent_LongTerm_Class import Agent_LongTerm`.
 
+### Agent_Myself Details
+
+`Agent_Myself` combines the **LongTerm IV z-score** for **entries** with **leg-level** risk management:
+
+1. **Entry:** identical long-run IV mean and **`z_t`** as `Agent_LongTerm`; opens a **long straddle** when `z_t < −entry_threshold` (no short side).
+2. **Exit:** call and put are managed **separately** with **`stop_loss_pct`** and **`stop_profit_pct`** vs each leg’s entry premium (**fractions**, not z-scores). If one leg is already closed, the survivor uses **breakeven** (exit when price returns to that leg’s entry).
+3. **`Force_Close`:** flattens options and hedge like other agents.
+
 ### Deterministic vs Simulation
 
-- `Agent_Garch` and `Agent_LongTerm` are **deterministic** (closed-form / recursive vol and rolling sample means).
+- `Agent_Garch`, `Agent_LongTerm`, and the signal path of `Agent_Myself` are **deterministic** (recursive vol or rolling IV mean; z-scores from sample mean and std of recent spreads).
 - They do **not** run Monte Carlo multi-path simulation in this repository.
-- `Agent_Garch` uses forward variance iteration; `Agent_LongTerm` uses a rolling historical IV mean only.
+- `Agent_Garch` uses forward variance iteration; `Agent_LongTerm` and `Agent_Myself` (entry) use a rolling historical IV mean only.
 
 ---
 
