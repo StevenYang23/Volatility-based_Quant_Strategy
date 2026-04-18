@@ -3,6 +3,10 @@ import pandas as pd
 from pathlib import Path
 
 class Agent_Percentile:
+    """Percentile entries on rolling Z(VRP) using the same 20d mean/std as hardThreshold."""
+
+    _MIN_ZSCORE_HISTORY = 20  # rolling Z(VRP) samples before percentile thresholds apply
+
     def __init__(
         self,
         display_name="Agent_Percentile",
@@ -14,7 +18,6 @@ class Agent_Percentile:
         self.display_name = display_name
         self.entry_low_percentile = entry_percentile
         self.entry_high_percentile = 1.0 - entry_percentile
-        self.min_vrp_history = 10
         self.delta_hedge = delta_hedge
         self.rehedge_threshold = rehedge_threshold
         self.allow_short = allow_short
@@ -43,8 +46,7 @@ class Agent_Percentile:
         self.rho_attribute = []
         self.residual = []
         self.position_state_for_pnl = []
-        self.vrp_history = []  # all valid VRP values the agent has seen
-        self.vrp_zscore_history = []  # z-scores built from seen VRP history
+        self.vrp_zscore_history = []  # past daily Z(VRP) = (VRP - VRP_20d_mean) / VRP_20d_std
         self._init_trade_log()
 
     def _init_trade_log(self):
@@ -182,42 +184,45 @@ class Agent_Percentile:
 
         if data["Force_Close"]:
             self.close_position(data)
-            vrp_fc = data["VRP"]
-            if pd.notna(vrp_fc):
-                vrp_fc = float(vrp_fc)
-                if len(self.vrp_history) >= self.min_vrp_history:
-                    mu_fc = float(np.nanmean(self.vrp_history))
-                    sd_fc = float(np.nanstd(self.vrp_history, ddof=1))
-                    if np.isfinite(sd_fc) and sd_fc > 1e-12:
-                        self.vrp_zscore_history.append((vrp_fc - mu_fc) / sd_fc)
-                self.vrp_history.append(vrp_fc)
+            vrp_fc = data.get("VRP")
+            mu_fc = data.get("VRP_20d_mean")
+            sd_fc = data.get("VRP_20d_std")
+            if (
+                vrp_fc is not None
+                and mu_fc is not None
+                and sd_fc is not None
+                and pd.notna(vrp_fc)
+                and pd.notna(mu_fc)
+                and pd.notna(sd_fc)
+            ):
+                sdv = float(sd_fc)
+                if np.isfinite(sdv) and sdv > 1e-12:
+                    z_fc = (float(vrp_fc) - float(mu_fc)) / sdv
+                    self.vrp_zscore_history.append(z_fc)
             self.prev_data = data
             return
 
-        vrp = data["VRP"]
-        if pd.isna(vrp):
+        vrp = data.get("VRP")
+        vrp_mean = data.get("VRP_20d_mean")
+        vrp_std = data.get("VRP_20d_std")
+        if vrp is None or vrp_mean is None or vrp_std is None:
+            self.prev_data = data
+            return
+        if pd.isna(vrp) or pd.isna(vrp_mean) or pd.isna(vrp_std):
+            self.prev_data = data
+            return
+
+        vrp_std = float(vrp_std)
+        if not np.isfinite(vrp_std) or vrp_std <= 1e-12:
             self.prev_data = data
             return
 
         vrp = float(vrp)
-        if len(self.vrp_history) < self.min_vrp_history:
-            self.vrp_history.append(vrp)
-            self.prev_data = data
-            return
+        vrp_mean = float(vrp_mean)
+        curr_z = (vrp - vrp_mean) / vrp_std
 
-        # Switch from raw VRP thresholds to percentile thresholds of ZScore(VRP),
-        # while still using historical percentile logic.
-        mu = float(np.nanmean(self.vrp_history))
-        sd = float(np.nanstd(self.vrp_history, ddof=1))
-        if not np.isfinite(sd) or sd <= 1e-12:
-            self.vrp_history.append(vrp)
-            self.prev_data = data
-            return
-
-        curr_z = (vrp - mu) / sd
-        if len(self.vrp_zscore_history) < self.min_vrp_history:
+        if len(self.vrp_zscore_history) < self._MIN_ZSCORE_HISTORY:
             self.vrp_zscore_history.append(curr_z)
-            self.vrp_history.append(vrp)
             self.prev_data = data
             return
 
@@ -245,7 +250,6 @@ class Agent_Percentile:
             self.rehedge(data)
 
         self.vrp_zscore_history.append(curr_z)
-        self.vrp_history.append(vrp)
         self.prev_data = data
 
     def _trade_underlying(self, target_underlying, spot_price):
