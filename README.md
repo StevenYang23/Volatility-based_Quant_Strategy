@@ -1,5 +1,7 @@
 # Volatility-based Quant Strategy
 
+*Documentation last aligned with the repository: **April 2026**.*
+
 This repository implements a low-frequency volatility timing quantitative strategy. The strategy aims to capture the Volatility Risk Premium (VRP) and mean-reverting properties of implied volatility by actively trading at-the-money (ATM) ~30-day straddles.
 
 ## Overall Strategy Idea
@@ -46,47 +48,42 @@ All agents accept these parameters:
 | **`Agent_hardThreshold`**<br>`k=1` | `VRP < Mean - k * Std` | `VRP > Mean + k * Std` | `VRP` crosses `Mean` |
 | **`Agent_Percentile`**<br>`entry_percentile=0.20` | `Z(VRP)` below expanding low percentile | `Z(VRP)` above expanding high percentile | `Z(VRP)` crosses expanding median |
 | **`Agent_2threshold`**<br>`k_high`, `k_low` | `VRP < Mean - k_active * Std`<br>(`k_active = k_high` if 40d\_Std > 20d\_Std, else `k_low`) | `VRP > Mean + k_active * Std`<br>(same regime switch) | `VRP` crosses `Mean` |
-| **`Agent_Garch`**<br>`z_entry=1.0` | rolling z-score of (IV - GARCH\_RV) < `-z_entry` | rolling z-score of (IV - GARCH\_RV) > `+z_entry` | z-score crosses zero |
-| **`Agent_Heston`**<br>`z_entry=0.5` | rolling z-score of (IV - `sqrt(theta)`) < `-z_entry` | rolling z-score of (IV - `sqrt(theta)`) > `+z_entry` | z-score crosses zero |
+| **`Agent_Garch`**<br>`entry_threshold=1.0` (typical backtests use `0.5`) | rolling z-score of (IV − GARCH RV) < `−entry_threshold` | rolling z-score of (IV − GARCH RV) > `+entry_threshold` | z-score crosses zero |
+| **`Agent_LongTerm`**<br>`entry_threshold=0.5`, `long_term_window=126` | rolling z-score of (IV − long-run IV mean) < `−entry_threshold` | rolling z-score of (IV − long-run IV mean) > `+entry_threshold` | z-score crosses zero |
+
+Agent-specific parameters (others use the **Shared Parameters** table):
+
+| Parameter | Agents | Description | Default |
+| :--- | :--- | :--- | :--- |
+| `entry_threshold` | `Agent_Garch`, `Agent_LongTerm` | Magnitude of rolling z-score required to enter long/short vol | Garch `1.0`, LongTerm `0.5` |
+| `long_term_window` | `Agent_LongTerm` | Trading days of **past** straddle IV used for the long-run mean (today excluded) | `126` (min `5`) |
 
 ### Agent_Garch Details
 
-The GARCH agent uses a **GJR-GARCH(1,1)** model with **Student-t** innovations, then trades the IV-RV spread:
+The GARCH agent uses a **GJR-GARCH(1,1)** model with **Student-t** innovations, then trades relative value in implied vs forecast realized vol:
 
-1. **Fit**: GJR-GARCH(1,1) is fit on the trailing 20 trading days of log returns, re-fit every 5 days
+1. **Fit**: GJR-GARCH(1,1) is fit on the trailing **20** trading days of log returns, re-fit every **5** days
 2. **Update**: between re-fits, the conditional variance is rolled forward with asymmetry (negative shocks receive extra gamma loading)
-3. **Forecast horizon alignment**: RV forecast is computed from the **average of a 30-day forward variance path** (to align with ~30D option tenor)
-4. **Signal**: `spread = IV - GARCH_RV_30D`. The z-score of the spread is computed on a **rolling window** (default 60 obs, min 20) for entry/exit
-4. **Fallback**: when `arch` is not installed, an EWMA variance (RiskMetrics, lambda=0.94) is used instead
+3. **Forecast horizon**: the forward variance path length matches **trading days from valuation `Date` to option `Expiry`** (`numpy.busday_count`). If dates are missing, a **30-day** fallback is used
+4. **Annualized RV forecast**: mean variance along that path, converted to annualized vol (same scale as `Straddle_imp_vol`)
+5. **Signal**: `spread = IV − GARCH_RV`. Entry uses the rolling **z-score** of `spread` vs recent spread history: requires at least **20** spread observations; z-window **20**; compare `z` to **`entry_threshold`**. Exit when z crosses **0** (same convention as other z-based agents)
+6. **Fallback**: when `arch` is not installed, an EWMA variance (RiskMetrics, λ = 0.94) is used instead
 
-### Agent_Heston Details
+### Agent_LongTerm Details
 
-`Agent_Heston` calibrates Heston parameters to current market conditions (ATM inputs) and generates a mean-reversion volatility signal:
+`Agent_LongTerm` replaces the former Heston-calibration agent with a **simple long-horizon implied-vol benchmark** (no stochastic-vol calibration, no QuantLib):
 
-1. **Calibration targets**: current `S`, `K`, `T`, `r`, and market `IV` (ATM straddle context)
-2. **Parameters**: calibrates `v0`, `kappa`, `theta`, `sigma`, `rho`
-3. **Pricing engine**:
-   - tries `QuantLib` `AnalyticHestonEngine` first (if installed)
-   - otherwise uses vectorized Heston characteristic-function integration with trapezoidal rule
-4. **Calibration schedule**:
-   - full calibration every `full_calibrate_every` days (default 5)
-   - in-between days only `v0` is updated while structure params are held
-5. **Signal**:
-   - `spread = IV - sqrt(theta)`
-   - rolling z-score (default 20-day window) drives long/short/close
-6. **Risk controls**:
-   - tracks **Feller status** `2*kappa*theta/sigma^2`
-   - blocks new short-vol entries under extreme skew (`rho <= rho_tail_threshold`, default -0.8)
-   - if full calibration fails for `max_full_calib_failures` consecutive attempts (default 3), forces position close
-7. **Rate handling**:
-   - if tenor curve fields (e.g. `r_1m`, `r_3m`, `r_6m`, `r_1y`) are present, interpolates `r` by option tenor
-   - otherwise falls back to `r`
+1. **Long-run mean**: on each day, the benchmark is the **mean of the prior `long_term_window` daily values of `Straddle_imp_vol`** (today’s IV is **not** included)
+2. **Signal**: `spread = IV_today − long_run_mean`
+3. **Entry / exit**: same rolling **z-score** machinery as `Agent_Garch`—min **20** spreads before trading, **20-day** z-window, **`entry_threshold`** for entries, exit when z crosses **0**
+
+For backward compatibility, `Agent_Heston_Class.py` re-exports **`Agent_Heston = Agent_LongTerm`** (same class). Prefer `from Agent_LongTerm_Class import Agent_LongTerm`.
 
 ### Deterministic vs Simulation
 
-- `Agent_Garch` and `Agent_Heston` are currently **deterministic model-based** implementations.
-- They do **not** run Monte Carlo multi-path simulation in the present codebase.
-- `Agent_Garch` uses variance recursion / forward variance projection; `Agent_Heston` uses characteristic-function integration (or QuantLib analytic pricing engine when available).
+- `Agent_Garch` and `Agent_LongTerm` are **deterministic** (closed-form / recursive vol and rolling sample means).
+- They do **not** run Monte Carlo multi-path simulation in this repository.
+- `Agent_Garch` uses forward variance iteration; `Agent_LongTerm` uses a rolling historical IV mean only.
 
 ---
 
@@ -121,21 +118,24 @@ Builds a single CSV per symbol at `DataSet/{symbol}.csv`:
 
 ### Backtest Snapshot
 
-Snapshot context (for reproducibility):
+Illustrative run from `Back_test.ipynb` (metrics change with data and parameters):
+
 - Dataset: `DataSet/QQQ.csv`
-- Shared setting: `delta_hedge=True`, `rehedge_threshold=0.05`
-- Agent-specific settings used:
+- Shared: `delta_hedge=True`, `rehedge_threshold=0.05`
+- Agents configured:
   - `Agent_hardThreshold`: `k=1`
   - `Agent_Perc`: `entry_percentile=0.2`
   - `Agent_2threshold`: `k_high=1.4`, `k_low=0.6`
-  - `Agent_Garch`: `z_entry=0.5`
+  - `Agent_Garch`: `entry_threshold=0.5`
+  - `Agent_LongTerm`: `entry_threshold=0.5`, default `long_term_window=126`
 
 | Agent | Win Rate | Sharpe Ratio | Sortino Ratio | Annual Return | Annual Volatility | Max Drawdown | Calmar Ratio | Kelly's Criteria |
 | :--- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
-| `Agent_hardThreshold` | 82.50% | 1.1201 | 1.0015 | 25.33% | 20.16% | -21.25% | 1.1922 | 5.5565 |
-| `Agent_Perc` | 80.65% | 1.3727 | 1.2589 | 34.43% | 21.56% | -22.38% | 1.5389 | 6.3677 |
-| `Agent_2threshold` | 78.95% | 1.1875 | 1.0669 | 24.98% | 18.78% | -21.25% | 1.1756 | 6.3233 |
-| `Agent_Garch` | 77.78% | 1.5885 | 1.9461 | 59.39% | 29.35% | -21.88% | 2.7149 | 5.4128 |
+| `Agent_hardThreshold` | 82.50% | 0.9265 | 0.7079 | 22.14% | 21.59% | -20.95% | 1.0570 | 4.2915 |
+| `Agent_Perc` | 77.42% | 1.3828 | 1.3134 | 36.58% | 22.54% | -22.18% | 1.6490 | 6.1341 |
+| `Agent_2threshold` | 78.95% | 1.1970 | 1.0845 | 25.12% | 18.73% | -20.95% | 1.1993 | 6.3925 |
+| `Agent_Garch` | 74.55% | 1.5126 | 1.9497 | 61.95% | 31.87% | -18.27% | 3.3904 | 4.7453 |
+| `Agent_LongTerm` | 83.93% | 2.0199 | 1.7615 | 54.33% | 21.48% | -18.26% | 2.9755 | 9.4035 |
 
 ## Greeks Attribution Calculation
 
@@ -187,9 +187,10 @@ The backtest suite generates comprehensive visualizations to analyze returns, ri
 
 ### 1. Cumulative Return & Signals
 ![Cumulative Return](demo/Return.png)
-- **Top Panel:** Cumulative geometric return (value ratio) of the underlying asset versus agents
-- **Middle Panel:** Daily log-return rate of each agent
-- **Bottom Panel:** VRP signal level with rolling 20-day mean and ±1 std bands
+- **Panel 1 (top):** Cumulative geometric return (value ratio) of the underlying versus each agent
+- **Panel 2:** Daily log-return of each agent
+- **Panel 3:** **RV** (`RV` column) vs **IV** (`Straddle_imp_vol`) over time
+- **Panel 4 (bottom):** **VRP** level with rolling 20-day mean and ±1 std bands (computed in-notebook or from `VRP_20d_*` columns when present)
 
 ### 2. PnL Attribution by Greek (Pie Breakdown)
 ![Greeks Attribution Pie](demo/Greeks_Attribution_Pie.png)

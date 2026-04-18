@@ -115,8 +115,8 @@ def Visuallize_Result(Data, Agents):
         r = agent.get_result()
         agent_results.append(r)
 
-    fig = plt.figure(figsize=(18, 12))
-    outer = fig.add_gridspec(3, 1, height_ratios=[1.2, 1.8, 1.8], hspace=0.30)
+    fig = plt.figure(figsize=(18, 14))
+    outer = fig.add_gridspec(4, 1, height_ratios=[1.2, 1.8, 1.35, 1.8], hspace=0.28)
 
     # -------------------------------------------------
     # 1) Cumulated return: all agents + underlying
@@ -165,11 +165,30 @@ def Visuallize_Result(Data, Agents):
     ax2.tick_params(axis="both", labelsize=13)
     ax2.grid(alpha=0.30)
     ax2.legend(loc="upper left", fontsize=11, framealpha=0.92, ncol=min(3, max(1, len(agent_results))))
+    ax2.tick_params(axis="x", labelbottom=False)
 
     # -------------------------------------------------
-    # 3) VRP signal panel: VRP, mean, mean +/- std
+    # 3) Realized vs implied vol (levels)
     # -------------------------------------------------
-    ax3 = fig.add_subplot(outer[2, 0], sharex=ax1)
+    ax_rv_iv = fig.add_subplot(outer[2, 0], sharex=ax1)
+    rv_series = pd.to_numeric(data.get("RV", pd.Series(index=data.index, dtype=float)), errors="coerce")
+    iv_series = pd.to_numeric(
+        data.get("Straddle_imp_vol", pd.Series(index=data.index, dtype=float)),
+        errors="coerce",
+    )
+    ax_rv_iv.plot(data["Date"], rv_series, label="RV", linewidth=1.4, color="#2ca02c")
+    ax_rv_iv.plot(data["Date"], iv_series, label="IV (straddle)", linewidth=1.4, color="#d62728")
+    ax_rv_iv.set_title("Realized vs implied volatility", fontsize=15)
+    ax_rv_iv.set_ylabel("Volatility", fontsize=15)
+    ax_rv_iv.tick_params(axis="both", labelsize=13)
+    ax_rv_iv.grid(alpha=0.30)
+    ax_rv_iv.legend(loc="upper left", fontsize=11, framealpha=0.92, ncol=2)
+    ax_rv_iv.tick_params(axis="x", labelbottom=False)
+
+    # -------------------------------------------------
+    # 4) VRP signal panel: VRP, mean, mean +/- std
+    # -------------------------------------------------
+    ax3 = fig.add_subplot(outer[3, 0], sharex=ax1)
     vrp = pd.to_numeric(data.get("VRP", pd.Series(index=data.index, dtype=float)), errors="coerce")
     if "VRP_20d_mean" in data.columns:
         vrp_mean = pd.to_numeric(data["VRP_20d_mean"], errors="coerce")
@@ -209,8 +228,9 @@ def Visuallize_Result(Data, Agents):
     ax3.grid(alpha=0.30)
     ax3.legend(loc="upper left", fontsize=11, ncol=2, framealpha=0.92)
 
+    ax1.tick_params(axis="x", labelbottom=False)
     ax3.tick_params(axis="x", rotation=20)
-    fig.subplots_adjust(hspace=0.30, bottom=0.10)
+    fig.subplots_adjust(hspace=0.28, bottom=0.10)
     plt.show()
 
 def Visuallize_Greeks_exposure(Data, Agents):

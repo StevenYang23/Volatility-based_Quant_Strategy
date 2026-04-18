@@ -1,35 +1,27 @@
 import numpy as np
 import pandas as pd
 from pathlib import Path
-from warnings import catch_warnings, simplefilter
-
-try:
-    from arch import arch_model
-except ImportError:
-    arch_model = None
 
 
-class Agent_Garch:
-    _LOOKBACK = 20
-    _REFIT_EVERY = 5
+class Agent_LongTerm:
     _MIN_SPREAD_OBS = 20
     _Z_ROLLING_WINDOW = 20
-    _DEFAULT_FORECAST_DAYS = 30  # fallback when Expiry/Date are unusable
 
     def __init__(
         self,
-        display_name="Agent_Garch",
+        display_name="Agent_LongTerm",
+        entry_threshold=0.5,
         allow_short=True,
         delta_hedge=True,
         rehedge_threshold=0.05,
-        entry_threshold=1.0,
+        long_term_window=126,
     ):
         self.display_name = display_name
         self.delta_hedge = delta_hedge
         self.rehedge_threshold = rehedge_threshold
         self.allow_short = allow_short
         self.entry_threshold = max(float(entry_threshold), 0.0)
-        self.trading_days_per_year = 252
+        self.long_term_window = max(int(long_term_window), 5)
         self.option_lot_size = 100
 
         self.num_options = 0
@@ -52,19 +44,12 @@ class Agent_Garch:
         self.residual = []
         self.position_state_for_pnl = []
 
-        self._omega = np.nan
-        self._alpha = np.nan
-        self._gamma = np.nan
-        self._beta = np.nan
-        self._nu = np.nan
-        self._h = np.nan
-        self._days_since_fit = self._REFIT_EVERY
-        self._stock_close_buf = []
+        self._iv_buf = []
+        self._iv_buf_max = max(self.long_term_window * 4, 512)
         self._spread_history = []
-
-        self.rv_forecast_history = []
-        self.iv_rv_spread_history = []
-        self.garch_direction_signal = []
+        self.longterm_direction_signal = []
+        self.long_term_mean_history = []
+        self.iv_longterm_spread_history = []
         self._init_trade_log()
 
     # ------------------------------------------------------------------
@@ -112,11 +97,11 @@ class Agent_Garch:
         dS_adj = dS + div
 
         option_units = self.num_options * self.option_lot_size
-        daily_pnl = (option_units * (straddle_price - prev_straddle)
-                     + self.num_underlying * dS_adj)
+        daily_pnl = option_units * (straddle_price - prev_straddle) + self.num_underlying * dS_adj
 
-        yesterday_exposure = (abs(option_units * prev_straddle)
-                              + abs(self.num_underlying * self.prev_data["Stock_Close"]))
+        yesterday_exposure = abs(option_units * prev_straddle) + abs(
+            self.num_underlying * self.prev_data["Stock_Close"]
+        )
         simple_return = daily_pnl / yesterday_exposure if yesterday_exposure > 0 else 0.0
         safe_simple_return = max(simple_return, -0.999999999)
         daily_return = np.log1p(safe_simple_return)
@@ -142,20 +127,18 @@ class Agent_Garch:
         if self.delta_hedge:
             end_net_delta = q * curr_delta + h
             if abs(end_net_delta) > self.rehedge_threshold:
-                # Rehedge day: use midpoint delta to reduce attribution leakage to residual.
                 effective_delta = 0.5 * (prev_delta + curr_delta)
         delta_pnl = q * effective_delta * dS
-        gamma_pnl = 0.5 * q * _f(self.prev_data.get("Straddle_Gamma")) * (dS ** 2)
+        gamma_pnl = 0.5 * q * _f(self.prev_data.get("Straddle_Gamma")) * (dS**2)
         vega_pnl = q * _f(self.prev_data.get("Straddle_Vega")) * d_sigma
         vanna_pnl = q * _f(self.prev_data.get("Straddle_Vanna")) * dS * d_sigma
-        volga_pnl = 0.5 * q * _f(self.prev_data.get("Straddle_Volga")) * (d_sigma ** 2)
+        volga_pnl = 0.5 * q * _f(self.prev_data.get("Straddle_Volga")) * (d_sigma**2)
         theta_pnl = q * _f(self.prev_data.get("Straddle_Theta")) * dt
         rho_pnl = q * _f(self.prev_data.get("Straddle_Rho")) * dr * 100.0
         hedge_pnl = h * dS_adj
 
         explained = (
-            delta_pnl + gamma_pnl + vega_pnl + vanna_pnl +
-            volga_pnl + theta_pnl + rho_pnl + hedge_pnl
+            delta_pnl + gamma_pnl + vega_pnl + vanna_pnl + volga_pnl + theta_pnl + rho_pnl + hedge_pnl
         )
         actual_delta_exp = q * prev_delta + (h if self.delta_hedge else 0.0)
         self._store_attr(
@@ -196,184 +179,84 @@ class Agent_Garch:
 
     def _append_zeros(self):
         for lst in (
-            self.PnL, self.Return, self.actual_delta,
-            self.delta_attribute, self.gamma_attribute,
-            self.vega_attribute, self.theta_attribute,
-            self.vanna_attribute, self.volga_attribute,
-            self.rho_attribute, self.residual,
+            self.PnL,
+            self.Return,
+            self.actual_delta,
+            self.delta_attribute,
+            self.gamma_attribute,
+            self.vega_attribute,
+            self.theta_attribute,
+            self.vanna_attribute,
+            self.volga_attribute,
+            self.rho_attribute,
+            self.residual,
         ):
             lst.append(0.0)
 
-    # ------------------------------------------------------------------
-    # GARCH engine
-    # ------------------------------------------------------------------
-
-    def _fit_garch(self):
-        px = np.asarray(self._stock_close_buf[-(self._LOOKBACK + 1):], dtype=float)
-        px = px[np.isfinite(px)]
-        if px.size < self._LOOKBACK + 1:
-            return False
-
-        log_ret = np.diff(np.log(px))
-        log_ret = log_ret[np.isfinite(log_ret)]
-        if log_ret.size < 20:
-            return False
-
-        log_ret_pct = log_ret * 100.0
-
-        if arch_model is None:
-            var = float(np.var(log_ret_pct))
-            for r in log_ret_pct:
-                var = 0.94 * var + 0.06 * r * r
-            self._omega = 0.0
-            self._alpha = 0.06
-            self._gamma = 0.0
-            self._beta = 0.94
-            self._nu = np.nan
-            self._h = var
-            self._days_since_fit = 0
-            return True
-
-        try:
-            with catch_warnings():
-                simplefilter("ignore")
-                model = arch_model(
-                    log_ret_pct,
-                    mean="Zero",
-                    vol="GARCH",
-                    p=1, o=1, q=1,
-                    dist="t",
-                    rescale=False,
-                )
-                fit = model.fit(disp="off")
-            self._omega = float(fit.params.get("omega", 0.0))
-            self._alpha = float(fit.params.get("alpha[1]", 0.06))
-            self._gamma = float(fit.params.get("gamma[1]", 0.0))
-            self._beta = float(fit.params.get("beta[1]", 0.94))
-            self._nu = float(fit.params.get("nu", np.nan))
-            cond_vol = fit.conditional_volatility
-            self._h = (
-                float(cond_vol.iloc[-1]) ** 2
-                if len(cond_vol) > 0
-                else float(np.var(log_ret_pct))
-            )
-            self._days_since_fit = 0
-            return True
-        except Exception:
-            return False
-
-    def _update_h(self, daily_log_return):
-        if np.isnan(self._omega):
-            return
-        eps_pct = daily_log_return * 100.0
-        asym = self._gamma if eps_pct < 0 else 0.0
-        self._h = self._omega + (self._alpha + asym) * eps_pct**2 + self._beta * self._h
-
-    def _days_to_strike(self, data):
-        """Trading days from valuation date to expiry (aligned with option tenor)."""
-        exp_dt = pd.to_datetime(data.get("Expiry", pd.NaT), errors="coerce")
-        date_dt = pd.to_datetime(data.get("Date", pd.NaT), errors="coerce")
-        if pd.isna(exp_dt) or pd.isna(date_dt):
-            return int(self._DEFAULT_FORECAST_DAYS)
-        as_of = date_dt.date() if hasattr(date_dt, "date") else pd.Timestamp(date_dt).date()
-        exp = exp_dt.date() if hasattr(exp_dt, "date") else pd.Timestamp(exp_dt).date()
-        bd = int(np.busday_count(np.datetime64(as_of), np.datetime64(exp)))
-        return max(bd, 1)
-
-    def _garch_rv_annualized(self, horizon_days):
-        if np.isnan(self._h) or self._h <= 0:
-            return np.nan
-        h_step = float(self._h)
-        omega = float(self._omega) if np.isfinite(self._omega) else 0.0
-        alpha = float(self._alpha) if np.isfinite(self._alpha) else 0.0
-        gamma = float(self._gamma) if np.isfinite(self._gamma) else 0.0
-        beta = float(self._beta) if np.isfinite(self._beta) else 0.0
-        phi = alpha + beta + 0.5 * gamma
-        phi = min(max(phi, 0.0), 1.2)
-
-        horizon = int(horizon_days)
-        h_path = []
-        for _ in range(horizon):
-            h_step = omega + phi * h_step
-            if not np.isfinite(h_step) or h_step <= 0:
-                return np.nan
-            h_path.append(h_step)
-
-        avg_daily_var_pct = float(np.mean(h_path))
-        sigma_daily = np.sqrt(avg_daily_var_pct) / 100.0
-        return sigma_daily * np.sqrt(self.trading_days_per_year)
+    def _append_signal_nan(self, direction=0):
+        self.longterm_direction_signal.append(direction)
+        self.long_term_mean_history.append(np.nan)
+        self.iv_longterm_spread_history.append(np.nan)
 
     # ------------------------------------------------------------------
-    # Trade logic
+    # Signal: rolling mean IV (past window only) vs current IV
     # ------------------------------------------------------------------
 
     def trade(self, data):
         self._compute_daily_pnl(data)
 
-        curr_spot = data.get("Stock_Close", np.nan)
-        curr_iv = data.get("Straddle_imp_vol", np.nan)
-
-        if pd.notna(curr_spot):
-            self._stock_close_buf.append(float(curr_spot))
-
-        if len(self._stock_close_buf) >= 2:
-            ret = np.log(self._stock_close_buf[-1] / self._stock_close_buf[-2])
-            if np.isfinite(ret) and not np.isnan(self._omega):
-                self._update_h(ret)
-            self._days_since_fit += 1
-
-        if (
-            self._days_since_fit >= self._REFIT_EVERY
-            and len(self._stock_close_buf) >= self._LOOKBACK + 1
-        ):
-            self._fit_garch()
-
         if data["Force_Close"]:
             self.close_position(data)
-            self.garch_direction_signal.append(0)
-            self.rv_forecast_history.append(np.nan)
-            self.iv_rv_spread_history.append(np.nan)
+            self._append_signal_nan(direction=0)
             self.prev_data = data
             return
 
-        garch_rv = self._garch_rv_annualized(self._days_to_strike(data))
-
-        if pd.isna(curr_iv) or not np.isfinite(garch_rv):
-            self.garch_direction_signal.append(0)
-            self.rv_forecast_history.append(
-                garch_rv if np.isfinite(garch_rv) else np.nan
-            )
-            self.iv_rv_spread_history.append(np.nan)
+        curr_iv = data.get("Straddle_imp_vol", np.nan)
+        if pd.isna(curr_iv) or not np.isfinite(curr_iv):
+            self._append_signal_nan(direction=0)
             self.prev_data = data
             return
 
-        spread = float(curr_iv) - garch_rv
+        if len(self._iv_buf) < self.long_term_window:
+            self._append_signal_nan(direction=0)
+            self._iv_buf.append(float(curr_iv))
+            if len(self._iv_buf) > self._iv_buf_max:
+                self._iv_buf = self._iv_buf[-self._iv_buf_max :]
+            self.prev_data = data
+            return
+
+        window_iv = self._iv_buf[-self.long_term_window :]
+        long_term_mean = float(np.mean(window_iv))
+        spread = float(curr_iv) - long_term_mean
+
         self._spread_history.append(spread)
-        self.rv_forecast_history.append(float(garch_rv))
-        self.iv_rv_spread_history.append(spread)
+        self.long_term_mean_history.append(long_term_mean)
+        self.iv_longterm_spread_history.append(spread)
+
+        self._iv_buf.append(float(curr_iv))
+        if len(self._iv_buf) > self._iv_buf_max:
+            self._iv_buf = self._iv_buf[-self._iv_buf_max :]
 
         if len(self._spread_history) < self._MIN_SPREAD_OBS:
-            self.garch_direction_signal.append(0)
+            self.longterm_direction_signal.append(0)
             self.prev_data = data
             return
 
-        spread_arr = np.asarray(
-            self._spread_history[-self._Z_ROLLING_WINDOW:], dtype=float
-        )
+        spread_arr = np.asarray(self._spread_history[-self._Z_ROLLING_WINDOW :], dtype=float)
         spread_arr = spread_arr[np.isfinite(spread_arr)]
         if spread_arr.size < 2:
-            self.garch_direction_signal.append(0)
+            self.longterm_direction_signal.append(0)
             self.prev_data = data
             return
+
         mu = float(np.mean(spread_arr))
-        sigma = float(np.std(spread_arr, ddof=1))
-        if sigma < 1e-12:
-            self.garch_direction_signal.append(0)
+        sigma_z = float(np.std(spread_arr, ddof=1))
+        if sigma_z < 1e-12:
+            self.longterm_direction_signal.append(0)
             self.prev_data = data
             return
 
-        z = (spread - mu) / sigma
-
+        z = (spread - mu) / sigma_z
         if z > self.entry_threshold:
             direction = -1
         elif z < -self.entry_threshold:
@@ -381,7 +264,7 @@ class Agent_Garch:
         else:
             direction = 0
 
-        self.garch_direction_signal.append(direction)
+        self.longterm_direction_signal.append(direction)
 
         target = 0
         if direction > 0:
@@ -390,7 +273,6 @@ class Agent_Garch:
             target = -1
 
         curr_pos = self.num_options
-
         if curr_pos == 0:
             if target != 0:
                 if target > 0:
@@ -458,18 +340,14 @@ class Agent_Garch:
         self.num_options = 1
         self.entry_straddle_price = data["Call_Close"] + data["Put_Close"]
         if self.delta_hedge:
-            self._trade_underlying(
-                -self.option_lot_size * data["Straddle_Delta"], data["Stock_Close"]
-            )
+            self._trade_underlying(-self.option_lot_size * data["Straddle_Delta"], data["Stock_Close"])
         self._log_transaction(data, "long")
 
     def short_position(self, data):
         self.num_options = -1
         self.entry_straddle_price = data["Call_Close"] + data["Put_Close"]
         if self.delta_hedge:
-            self._trade_underlying(
-                self.option_lot_size * data["Straddle_Delta"], data["Stock_Close"]
-            )
+            self._trade_underlying(self.option_lot_size * data["Straddle_Delta"], data["Stock_Close"])
         self._log_transaction(data, "short")
 
     def close_position(self, data=None):
@@ -484,10 +362,7 @@ class Agent_Garch:
             self._log_transaction(data, "close", earned=hedge_realized)
 
     def rehedge(self, data):
-        net_delta = (
-            self.num_options * self.option_lot_size * data["Straddle_Delta"]
-            + self.num_underlying
-        )
+        net_delta = self.num_options * self.option_lot_size * data["Straddle_Delta"] + self.num_underlying
         if abs(net_delta) > self.rehedge_threshold:
             target_underlying = -self.num_options * self.option_lot_size * data["Straddle_Delta"]
             hedge_realized = self._trade_underlying(target_underlying, data["Stock_Close"])
@@ -514,9 +389,9 @@ class Agent_Garch:
             "return": self.Return,
             "actual_delta": self.actual_delta,
             "position_state_for_pnl": self.position_state_for_pnl,
-            "garch_direction_signal": self.garch_direction_signal,
-            "rv_forecast_annualized": self.rv_forecast_history,
-            "iv_rv_spread": self.iv_rv_spread_history,
+            "longterm_direction_signal": self.longterm_direction_signal,
+            "long_term_mean_iv": self.long_term_mean_history,
+            "iv_longterm_spread": self.iv_longterm_spread_history,
         }
 
     def regime_attribution_summary(self, include_flat=False):
@@ -552,7 +427,5 @@ class Agent_Garch:
             rho=("rho", "sum"),
             residual=("residual", "sum"),
         )
-        summary.index = summary.index.map(
-            {-1: "short_straddle", 0: "flat", 1: "long_straddle"}
-        )
+        summary.index = summary.index.map({-1: "short_straddle", 0: "flat", 1: "long_straddle"})
         return summary
