@@ -1,0 +1,352 @@
+\documentclass[11pt]{article}
+
+\usepackage[T1]{fontenc}
+\usepackage[utf8]{inputenc}
+\usepackage{lmodern}
+\usepackage[margin=1in]{geometry}
+\usepackage{indentfirst}
+\usepackage{microtype}
+\usepackage{booktabs}
+\usepackage{amsmath}
+\usepackage{amsfonts}
+\usepackage{array}
+\usepackage{tabularx}
+\usepackage{graphicx}
+\usepackage{float}
+\usepackage[numbers,sort&compress]{natbib}
+\usepackage{hyperref}
+
+\hypersetup{
+  colorlinks=true,
+  linkcolor=blue,
+  citecolor=blue,
+  urlcolor=blue,
+  pdftitle={Volatility Trading with Delta-Hedged ATM Straddles},
+}
+
+\title{Volatility Trading with Delta-Hedged ATM Straddles}
+
+\makeatletter
+\def\@maketitle{%
+  \newpage
+  \null
+  \vspace*{0.75in}%
+  \vskip 2em%
+  \begin{center}%
+    \let\footnote\thanks
+    \rule{\textwidth}{4pt}\par
+    \vspace{0.25in}%
+    {\fontsize{17}{20}\selectfont\bfseries\@title\par}%
+    \vspace{0.25in}%
+    \rule{\textwidth}{1pt}\par
+    \vskip 2.5em%
+    {\large
+      \lineskip .5em%
+      \begin{tabular}[t]{c}%
+        \@author
+      \end{tabular}\par}%
+  \end{center}%
+  \vskip 1.5em
+}
+\makeatother
+
+\date{}
+
+\author{%
+  Dingjingmu (Steven) Yang \\
+  STAT8020: Quantitative Strategies and Algorithmic Trading\\
+  Master of Data Science\\
+  The University of Hong Kong\\
+  \texttt{u3664645@connect.hku.hk} \\
+}
+
+\begin{document}
+
+\maketitle
+
+\begin{abstract}
+Abstract to be completed in the final version.
+\end{abstract}
+
+\clearpage
+
+\section{Introduction}
+\label{sec:intro}
+
+This report studies a low-frequency volatility trading strategy implemented through one-month at-the-money (ATM) straddles on U.S. equities and exchange-traded funds. The core idea is simple: options embed the market's forward-looking assessment of risk through implied volatility, while the underlying asset reveals realized volatility only after price moves occur. A persistent gap between the two creates a natural trading signal. When implied volatility appears rich relative to an appropriate benchmark, the strategy sells volatility through a short straddle; when implied volatility appears cheap, it buys volatility through a long straddle.
+
+The key challenge is that an option position is not a pure volatility bet. A straddle carries directional sensitivity, convexity, time decay, and sensitivity to changes in interest rates and implied volatility itself. For that reason, the strategy overlays delta hedging in the underlying and evaluates performance through a daily Greeks-based attribution. The objective is not merely to report returns, but to show whether profits arise from the intended volatility exposure rather than from incidental equity direction.
+
+The intended audience is assumed to be familiar with stocks, returns, and standard backtesting ideas, but not necessarily with option trading. The discussion therefore introduces the economic intuition of a straddle, explains the role of implied volatility and Greeks, and then presents the trading rules and empirical results in a self-contained way.
+
+\section{Options Preliminaries}
+\label{sec:pricing}
+
+\subsection{Call, put, and straddle}
+
+A call option gives its holder the right, but not the obligation, to buy the underlying asset at a predetermined strike price $K$ before or at expiry. A put option gives the right to sell at the same strike. The holder of a long option pays the option price upfront and has limited downside equal to that payment. The seller of the option receives that payment upfront but assumes the contingent liability.
+
+At expiry $T$, the terminal payoffs of a call and a put are
+\[
+\text{Call payoff}=\max(S_T-K,0), \qquad
+\text{Put payoff}=\max(K-S_T,0),
+\]
+where $S_T$ is the underlying price at expiry.
+
+The strategy trades an at-the-money straddle, which is the combination of one call and one put written on the same underlying, with the same strike and the same expiry. At expiry, the payoff of a long straddle is
+\[
+\max(S_T-K,0)+\max(K-S_T,0)=|S_T-K|,
+\]
+so the position benefits from sufficiently large moves in either direction. This makes the straddle the natural vehicle for expressing a view on volatility rather than on market direction.
+
+\begin{figure}[H]
+  \centering
+  \begin{minipage}{0.48\textwidth}
+    \centering
+    \includegraphics[width=\linewidth]{images/pnl_call.png}
+  \end{minipage}\hfill
+  \begin{minipage}{0.48\textwidth}
+    \centering
+    \includegraphics[width=\linewidth]{images/pnl_put.png}
+  \end{minipage}
+  \caption{Illustrative maturity P\&L of a long call and a long put.}
+  \label{fig:call-put-pnl}
+\end{figure}
+
+\begin{figure}[H]
+  \centering
+  \begin{minipage}{0.48\textwidth}
+    \centering
+    \includegraphics[width=\linewidth]{images/pnl_long_straddle.png}
+  \end{minipage}\hfill
+  \begin{minipage}{0.48\textwidth}
+    \centering
+    \includegraphics[width=\linewidth]{images/pnl_short_straddle.png}
+  \end{minipage}
+  \caption{Illustrative maturity P\&L of long and short ATM straddles.}
+  \label{fig:straddle-pnl}
+\end{figure}
+
+\subsection{Black--Scholes model}
+
+This report uses the Black--Scholes model as the starting point for option valuation. The model provides a tractable mapping between an option's value and the key state variables that drive it: the underlying price, strike, time to maturity, risk-free rate, and volatility. Although listed equity options are American-style in legal form, Black--Scholes remains a standard and useful approximation for short-dated liquid contracts, especially when the main objective is to infer implied volatility and measure risk exposures consistently.
+
+For a European call and put with time to maturity $\tau=T-t$, risk-free rate $r$, and volatility $\sigma$, prices are
+\[
+C=S_t N(d_1)-Ke^{-r\tau}N(d_2), \qquad
+P=Ke^{-r\tau}N(-d_2)-S_tN(-d_1),
+\]
+where
+\[
+d_1=\frac{\ln(S_t/K)+(r+\tfrac{1}{2}\sigma^2)\tau}{\sigma\sqrt{\tau}},
+\qquad
+d_2=d_1-\sigma\sqrt{\tau},
+\]
+and $N(\cdot)$ denotes the standard normal cumulative distribution function.
+
+\subsection{Greeks}
+
+The value of an option depends on the underlying price, implied volatility, time to expiry, and interest rates. The Greeks summarize local sensitivities:
+\[
+\Delta=\frac{\partial V}{\partial S}, \qquad
+\Gamma=\frac{\partial^2 V}{\partial S^2}, \qquad
+\Theta=\frac{\partial V}{\partial t}, \qquad
+\nu=\frac{\partial V}{\partial \sigma}, \qquad
+\rho=\frac{\partial V}{\partial r},
+\]
+\[
+\text{Vanna}=\frac{\partial^2 V}{\partial S\,\partial \sigma},
+\qquad
+\text{Volga}=\frac{\partial^2 V}{\partial \sigma^2}.
+\]
+
+For the present strategy, the most important interpretations are straightforward. Delta measures first-order directional exposure to the underlying. Gamma captures convexity in the underlying price. Vega measures sensitivity to changes in implied volatility. Theta represents time decay. Vanna and volga become relevant when the underlying and implied volatility move jointly or when volatility changes materially.
+
+A second-order expansion of option value over a short interval provides the basic P\&L map:
+\[
+\mathrm{d}V \approx
+\Delta\,\mathrm{d}S
++\frac{1}{2}\Gamma\,\mathrm{d}S^2
++\nu\,\mathrm{d}\sigma
++\Theta\,\mathrm{d}t
++\rho\,\mathrm{d}r
++\text{Vanna}\,\mathrm{d}S\,\mathrm{d}\sigma
++\frac{1}{2}\text{Volga}\,(\mathrm{d}\sigma)^2
++\varepsilon,
+\]
+where $\varepsilon$ captures higher-order terms. This decomposition follows the standard treatment of option risk attribution in \citet{bossu2014}. It is useful later when interpreting whether a delta-hedged straddle is actually earning volatility-related P\&L.
+
+\subsection{Implied volatility}
+
+Implied volatility is the value of $\sigma$ that makes the Black--Scholes price match the observed market price of an option or option package. In that sense, implied volatility is not directly observed; it is backed out from price. Practitioners often quote options in implied-volatility terms because volatility provides a standardized way to compare option richness across time and across contracts.
+
+This interpretation is central to the strategy studied in this report. The trading decision is not driven by a view on whether the stock will rise or fall. Instead, it is driven by whether the option market appears to be charging too much or too little for future uncertainty relative to a benchmark for expected or normal volatility.
+
+\section{Methodology}
+\label{sec:methodology}
+
+\subsection{Data}
+
+The empirical sample consists of three exchange-traded funds, namely SPY, QQQ, and DIA, together with a set of individual U.S. equities: AAPL, ACMR, AMD, GOOG, INTC, META, and TSLA. These assets provide a useful mix of broad market exposure and single-name volatility, allowing the strategy to be examined across instruments with different liquidity conditions, sector compositions, and event risk. The individual stocks are not selected through a formal screening rule; rather, they are chosen largely at random from names with which I am personally familiar, so the single-stock sample should be interpreted as illustrative rather than exhaustive.
+
+Although the strategy is implemented on all of these symbols, this report focuses primarily on the performance of SPY. The reason is practical as well as economic: SPY is the most popular and most liquid ETF in the sample, its options market is particularly deep, and its prices are therefore less affected by idiosyncratic microstructure noise than those of many single stocks. For that reason, SPY provides the cleanest setting for evaluating whether the strategy behaves as intended.
+
+For each symbol and each month, the strategy selects an at-the-money straddle associated with the next monthly expiry. The strike is fixed at entry and the position is monitored through the month. As the underlying moves, the contract drifts away from exact at-the-money status; this is a deliberate simplification consistent with a low-frequency monthly trading design.
+
+\subsubsection{Data construction details}
+
+Each daily observation combines the underlying close, cash dividends, a short-dated risk-free rate, and the closing prices of the selected call and put. From these inputs, the dataset computes realized volatility, leg-level implied volatilities, a single straddle implied volatility that matches the observed straddle price, and the standard Greeks for both individual legs and the straddle as a whole. All volatility measures are annualized using a 252-trading-day convention.
+
+Positions are delta hedged using the underlying. If the absolute net delta of the portfolio exceeds the re-hedging threshold, the stock hedge is adjusted and hedge shares are rounded to integers. This overlay does not remove all directional risk, but it reduces first-order exposure and makes the strategy more interpretable as a volatility trade rather than a disguised directional position.
+
+\subsection{Trading signal}
+
+All four agents share the same execution layer. A long-volatility position corresponds to buying one straddle, while a short-volatility position corresponds to selling one straddle when shorting is allowed. Positions are closed when the signal reverts toward its neutral region, and the hedge is updated whenever the net delta drifts beyond the chosen threshold.
+
+\subsubsection{Realized volatility benchmark}
+
+The classic benchmark in volatility trading is the volatility risk premium,
+\[
+\mathrm{VRP}_t=\mathrm{IV}_t-\mathrm{RV}_t.
+\]
+Here, $\mathrm{IV}_t$ denotes the implied volatility of the traded straddle and $\mathrm{RV}_t$ denotes realized volatility estimated from recent underlying returns. The intuition is direct: if implied volatility is high relative to realized volatility, the option market may be overpricing future uncertainty; if implied volatility is low relative to realized volatility, options may be relatively cheap.
+
+Realized volatility is computed from a rolling 20-day window of daily log returns. If $r_t=\ln(S_t/S_{t-1})$, then
+\[
+\mathrm{RV}_{t,20}=\sqrt{252}\,\sqrt{\frac{1}{20}\sum_{i=1}^{20}(r_{t+1-i}-\bar r_t)^2},
+\]
+where $\bar r_t$ is the mean return over the same window.
+
+This specification is the most familiar and transparent benchmark in the report, because it compares option-implied uncertainty with the variability recently observed in the underlying market.
+
+\begin{figure}[H]
+  \centering
+  \includegraphics[width=0.92\textwidth]{images/VRP.png}
+  \caption{SPY implied volatility and realized volatility in the upper panel, and the corresponding volatility risk premium in the lower panel. The lower panel also reports the rolling mean together with mean $\pm 1$ standard deviation bands.}
+  \label{fig:vrp-spy}
+\end{figure}
+
+\subsubsection{GARCH-based benchmark}
+
+The second benchmark replaces backward-looking realized volatility with a model-based forecast from a GJR-GARCH(1,1) specification with Student-$t$ innovations. This choice allows for volatility clustering and asymmetric responses to negative returns, both of which are common in equity data. The model is estimated on a trailing window, refit periodically, and projected forward over the remaining trading days to the option expiry.
+
+The corresponding spread is
+\[
+\mathrm{IV}_t-\widehat{\mathrm{RV}}^{\mathrm{GARCH}}_t.
+\]
+This benchmark is designed to compare current option-implied volatility with a forward-looking conditional volatility estimate rather than with a purely historical measure.
+
+\subsubsection{Long-horizon implied-volatility benchmark}
+
+A third benchmark compares current straddle implied volatility with a slow-moving historical average of past implied volatilities. Specifically, it uses the mean of the prior 126 observations of straddle implied volatility as a long-horizon anchor. The corresponding spread is therefore a measure of whether current option pricing is rich or cheap relative to the option market's own longer-run level.
+
+This benchmark differs conceptually from the first two. It does not ask whether implied volatility is high relative to recent realized volatility or to a model forecast of realized volatility. Instead, it asks whether implied volatility is high relative to its own historical norm.
+
+\subsubsection{Z-score normalization}
+
+The trading logic compares current straddle implied volatility with these benchmarks through a rolling 20-day z-score,
+\[
+Z_t(X)=\frac{X_t-\mu_{t,20}(X)}{\sigma_{t,20}(X)},
+\]
+where $X_t$ denotes the spread of interest and $\mu_{t,20}(X)$ and $\sigma_{t,20}(X)$ are its rolling mean and standard deviation. A sufficiently negative z-score indicates that options appear cheap relative to the benchmark, while a sufficiently positive z-score indicates that options appear expensive. This normalization makes the trading threshold comparable across different volatility regimes.
+
+\subsubsection{Signal summary}
+
+The implementation includes four agents built on these benchmarks. The hard-threshold rule and percentile rule both use the classic VRP idea, but they differ in how entry thresholds are defined. The GARCH-based rule replaces realized volatility with a conditional forecast. The long-horizon rule compares current implied volatility with its own slow-moving historical mean.
+
+\begin{table}[H]
+\centering
+\small
+\caption{Summary of trading rules.}
+\label{tab:signals}
+\begin{tabularx}{\textwidth}{@{}p{0.19\textwidth}X X p{0.16\textwidth}@{}}
+\toprule
+Agent & Long-volatility entry & Short-volatility entry & Exit rule \\
+\midrule
+Hard-threshold VRP & $Z_t(\mathrm{IV}-\mathrm{RV})<-k$ & $Z_t(\mathrm{IV}-\mathrm{RV})>k$ & z-score crosses zero \\
+Percentile VRP & rolling $Z_t(\mathrm{IV}-\mathrm{RV})$ in lower empirical tail & rolling $Z_t(\mathrm{IV}-\mathrm{RV})$ in upper empirical tail & z-score crosses historical median \\
+GARCH spread & $Z_t(\mathrm{IV}-\widehat{\mathrm{RV}}^{\mathrm{GARCH}})<-c$ & $Z_t(\mathrm{IV}-\widehat{\mathrm{RV}}^{\mathrm{GARCH}})>c$ & z-score crosses zero \\
+Long-horizon IV spread & $Z_t(\mathrm{IV}-\overline{\mathrm{IV}}^{\mathrm{long}})<-c$ & $Z_t(\mathrm{IV}-\overline{\mathrm{IV}}^{\mathrm{long}})>c$ & z-score crosses zero \\
+\bottomrule
+\end{tabularx}
+\end{table}
+
+The reported implementation uses the parameter settings summarized below.
+
+\begin{table}[H]
+\centering
+\small
+\caption{Shared execution parameters.}
+\label{tab:shared-params}
+\begin{tabularx}{\textwidth}{@{}p{0.28\textwidth}X p{0.16\textwidth}@{}}
+\toprule
+Parameter & Description & Value \\
+\midrule
+\texttt{allow\_short} & Whether short-volatility positions are allowed & True \\
+\texttt{delta\_hedge} & Whether the straddle is hedged with the underlying & True \\
+\texttt{rehedge\_threshold} & Absolute net delta that triggers hedge rebalancing & 0.05 \\
+\bottomrule
+\end{tabularx}
+\end{table}
+
+\begin{table}[H]
+\centering
+\small
+\caption{Agent-specific signal parameters.}
+\label{tab:agent-params}
+\begin{tabularx}{\textwidth}{@{}p{0.28\textwidth}X p{0.16\textwidth}@{}}
+\toprule
+Agent & Parameter & Value \\
+\midrule
+Hard-threshold VRP & $k$ & 1.0 \\
+Percentile VRP & Entry percentile & 0.20 \\
+GARCH spread & Entry threshold $c$ & 0.5 \\
+Long-horizon IV spread & Entry threshold $c$ & 0.5 \\
+\bottomrule
+\end{tabularx}
+\end{table}
+
+All parameters are fixed before the backtest is run. They are not fitted, trained, or optimized on the in-sample period, and the same group of parameter values is applied to every underlying in the sample. This design choice is intended to limit overfitting and make the cross-asset comparison more meaningful.
+
+\section{Results}
+\label{sec:results}
+
+\subsection{Performance on SPY}
+\subsubsection{Return summary}
+
+\subsubsection{P\&L attribution}
+
+Daily P\&L is measured as the change in the marked value of the option position plus the P\&L of the hedge inventory, including dividend adjustments. For one option lot of size $L=100$, if $q_t\in\{-1,0,1\}$ denotes the number of straddle lots held from $t$ to $t+1$, $h_t$ denotes hedge shares, and the straddle price is the sum of the call and put closes, then total daily P\&L is
+\[
+\mathrm{PnL}_t=(q_tL)\big(P^{\mathrm{straddle}}_{t+1}-P^{\mathrm{straddle}}_t\big)+h_t\,\Delta S_t^{\mathrm{adj}}.
+\]
+
+To understand where this P\&L comes from, the backtest attributes it to delta, gamma, vega, vanna, volga, theta, rho, and a residual term. The residual captures higher-order effects, discrete hedging, model mismatch, and any price change not explained by the local Greek approximation. The identity is
+\[
+\mathrm{PnL}_t = \mathrm{Delta}_t + \mathrm{Gamma}_t + \mathrm{Vega}_t + \mathrm{Vanna}_t + \mathrm{Volga}_t + \mathrm{Theta}_t + \mathrm{Rho}_t + \mathrm{Residual}_t.
+\]
+
+This attribution matters because a profitable volatility strategy should not derive its results mainly from unintended net equity exposure. In a well-functioning delta-hedged straddle strategy, vega and gamma-theta dynamics should be the main drivers, while the delta contribution should remain modest on average.
+
+\subsection{Performance on other ETFs}
+
+
+\subsection{Performance on single stocks}
+
+\subsection{Robustness}
+
+\section{Discussion}
+
+
+
+\small
+\begin{thebibliography}{9}
+
+\bibitem[Bossu(2014)]{bossu2014}
+Bossu, S\'ebastien (2014).
+\emph{Advanced Equity Derivatives: Volatility and Correlation}.
+Wiley Finance Series, John Wiley \& Sons, Inc., Hoboken, NJ.
+
+\end{thebibliography}
+
+\end{document}
