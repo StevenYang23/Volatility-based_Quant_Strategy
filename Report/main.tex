@@ -1,4 +1,4 @@
-\documentclass[11pt]{article}
+﻿\documentclass[11pt]{article}
 
 \usepackage[T1]{fontenc}
 \usepackage[utf8]{inputenc}
@@ -11,6 +11,7 @@
 \usepackage{amsfonts}
 \usepackage{array}
 \usepackage{tabularx}
+\usepackage{longtable}
 \usepackage{graphicx}
 \usepackage{float}
 \usepackage[numbers,sort&compress]{natbib}
@@ -333,10 +334,10 @@ All parameters are fixed before the backtest is run. They are not fitted, traine
 \toprule
 Agent & Win Rate & Sharpe & Sortino & Ann. Return & Ann. Vol. & Max DD & Calmar & Kelly \\
 \midrule
-\texttt{Agent\_hardThreshold} & 75.00\% & 1.3248 & 1.1919 & 25.96\% & 17.42\% & -11.12\% & 2.3339 & 7.6042 \\
-\texttt{Agent\_Perc} & 74.36\% & 1.2669 & 1.1843 & 24.85\% & 17.52\% & -11.12\% & 2.2345 & 7.2312 \\
+\texttt{Agent\_hardThreshold} & \underline{75.00\%} & \underline{1.3248} & \underline{1.1919} & \underline{25.96\%} & 17.42\% & \underline{-11.12\%} & \underline{2.3339} & \underline{7.6042} \\
+\texttt{Agent\_Perc} & 74.36\% & 1.2669 & 1.1843 & 24.85\% & 17.52\% & \underline{-11.12\%} & 2.2345 & 7.2312 \\
 \texttt{Agent\_Garch} & 74.47\% & 1.0765 & 0.9319 & 21.49\% & 18.09\% & -14.99\% & 1.4338 & 5.9520 \\
-\texttt{Agent\_LongTerm} & 73.91\% & 1.0618 & 1.1015 & 25.56\% & 21.44\% & -11.95\% & 2.1381 & 4.9534 \\
+\texttt{Agent\_LongTerm} & 73.91\% & 1.0618 & 1.1015 & 25.56\% & \underline{21.44\%} & -11.95\% & 2.1381 & 4.9534 \\
 \bottomrule
 \end{tabular}%
 }
@@ -389,12 +390,84 @@ Figure~\ref{fig:greeks-attribution} shows the summed attribution breakdown for e
 
 \subsection{Performance on other ETFs}
 
+Table~\ref{tab:etf-return-summary} reports performance statistics for QQQ and DIA under the same parameter set used in the SPY section. DIA is stronger on a risk-adjusted basis across agents (higher Sharpe and Sortino), while QQQ remains profitable but with larger drawdowns and more dispersion across agents.
+
+\begin{table}[H]
+\centering
+\footnotesize
+\caption{QQQ and DIA performance summary by agent.}
+\label{tab:etf-return-summary}
+\resizebox{\textwidth}{!}{%
+\begin{tabular}{llrrrrrr}
+\toprule
+Ticker & Agent & Win Rate & Sharpe & Sortino & Ann. Return & Ann. Vol. & Max DD \\
+\midrule
+QQQ & \texttt{Agent\_hardThreshold} & \underline{81.08\%} & 0.8870 & 0.6754 & 21.10\% & 21.58\% & -20.95\% \\
+QQQ & \texttt{Agent\_Perc}          & 69.23\% & 0.9749 & 1.2191 & 34.63\% & \underline{30.50\%} & -22.95\% \\
+QQQ & \texttt{Agent\_Garch}         & 76.32\% & 1.1106 & 0.9158 & 28.83\% & 22.81\% & -19.81\% \\
+QQQ & \texttt{Agent\_LongTerm}      & 80.00\% & \underline{1.7709} & \underline{1.5282} & \underline{46.30\%} & 21.48\% & \underline{-14.83\%} \\
+\midrule
+DIA & \texttt{Agent\_hardThreshold} & \underline{87.50\%} & 1.5611 & 1.2112 & 47.21\% & 24.77\% & -20.59\% \\
+DIA & \texttt{Agent\_Perc}          & 87.04\% & \underline{2.2303} & \underline{2.2453} & \underline{91.18\%} & 29.06\% & \underline{-18.77\%} \\
+DIA & \texttt{Agent\_Garch}         & 85.45\% & 1.9131 & 1.7752 & 68.01\% & 27.12\% & -18.97\% \\
+DIA & \texttt{Agent\_LongTerm}      & 85.71\% & 2.0476 & 1.7590 & 81.61\% & \underline{29.14\%} & -19.89\% \\
+\bottomrule
+\end{tabular}%
+}
+\end{table}
+
+Table~\ref{tab:etf-greeks-attribution} reports summed Greek attribution percentages. Across QQQ and DIA, Vega is the largest positive contributor in every agent, consistent with a volatility-risk-premium strategy. The strongest Vega attribution appears in \texttt{Agent\_LongTerm} for both ETFs (QQQ: +57.72\%, DIA: +66.42\%), indicating that this signal captures volatility-premium exposure most directly in the ETF sample. Residual attribution is generally negative, indicating that a non-trivial share of realized P\&L is outside the low-order Greek decomposition.
+
+\begin{table}[H]
+\centering
+\footnotesize
+\caption{QQQ and DIA Greeks attribution percentages by agent.}
+\label{tab:etf-greeks-attribution}
+\resizebox{\textwidth}{!}{%
+\begin{tabular}{llrrrrrrrr}
+\toprule
+Ticker & Agent & Delta & Gamma & Vega & Theta & Vanna & Volga & Rho & Residual \\
+\midrule
+QQQ & \texttt{Agent\_hardThreshold} & +2.81\% & -12.76\% & +54.67\% & -0.76\% & +2.73\% & +9.64\% & +0.00\% & -16.62\% \\
+QQQ & \texttt{Agent\_Perc}          & \underline{+10.38\%} & \underline{+9.51\%}  & +19.51\% & -12.03\% & \underline{+6.83\%} & \underline{+15.87\%} & -0.00\% & -25.88\% \\
+QQQ & \texttt{Agent\_Garch}         & -5.33\% & +8.92\%  & +47.41\% & -6.11\% & +2.40\% & +9.83\% & +0.01\% & -19.98\% \\
+QQQ & \texttt{Agent\_LongTerm}      & -0.77\% & -19.46\% & \underline{+57.72\%} & \underline{+3.42\%} & +2.34\% & +7.13\% & \underline{+0.02\%} & \underline{-9.14\%} \\
+\midrule
+DIA & \texttt{Agent\_hardThreshold} & -4.10\% & +3.97\%  & +48.70\% & -10.06\% & \underline{+6.17\%} & +14.41\% & +0.00\% & -12.58\% \\
+DIA & \texttt{Agent\_Perc}          & \underline{-3.75\%} & +2.60\%  & +50.89\% & -8.11\% & +4.56\% & \underline{+16.20\%} & -0.00\% & -13.88\% \\
+DIA & \texttt{Agent\_Garch}         & -8.63\% & \underline{+6.18\%}  & +58.07\% & -8.56\% & +2.44\% & +9.69\% & +0.00\% & \underline{-6.43\%} \\
+DIA & \texttt{Agent\_LongTerm}      & -6.71\% & +1.86\%  & \underline{+66.42\%} & \underline{+0.11\%} & +1.02\% & +7.41\% & \underline{+0.01\%} & -16.46\% \\
+\bottomrule
+\end{tabular}%
+}
+\end{table}
+
 
 \subsection{Performance on single stocks}
 
+Single-stock results are more heterogeneous than ETF results, reflecting larger idiosyncratic risk and event sensitivity. In terms of risk-adjusted performance, outcomes differ substantially by ticker: for example, GOOG and INTC are strong across multiple agents, whereas AMD and parts of ACMR/META are weaker or unstable in this sample.
+
+From a Greeks-attribution perspective, Vega remains the dominant positive component in most ticker-agent combinations. The highest Vega attribution in the single-stock panel is \texttt{Agent\_Garch} on ACMR (+67.53\%), while \texttt{Agent\_LongTerm} also shows very high Vega share on INTC (+42.03\%) and TSLA (+41.71\%). This supports the same core interpretation as in ETFs: realized strategy P\&L is primarily tied to volatility exposure, with residual and cross-greek terms explaining the remainder.
+
+The full single-stock statistics and Greeks-attribution tables are reported in Appendix~\ref{app:single-stock-full-tables}.
+
 \subsection{Robustness}
+The cross-asset results indicate that the long-horizon realized-volatility spread is the most robust signal in this study. Using one fixed parameter set (without ticker-specific tuning), it delivers the most consistent risk-adjusted performance across SPY, QQQ, and DIA, with mixed but still competitive outcomes in several single stocks.
+
+Greeks attribution is aligned with this conclusion: Vega is the dominant positive contributor in most cases, indicating that returns are primarily coming from volatility mispricing rather than directional beta.
+
+Robustness is stronger in ETFs than in single names, likely because ETFs have better liquidity and lower idiosyncratic jump risk. Main limitations are sample length, execution/transaction-cost assumptions, and residual terms outside the low-order Greeks decomposition.
+
+
 
 \section{Discussion}
+
+
+
+
+
+
+\clearpage
 
 
 
@@ -410,9 +483,120 @@ Wiley Finance Series, John Wiley \& Sons, Inc., Hoboken, NJ.
 
 
 
+\clearpage
 \appendix
+\addcontentsline{toc}{section}{Appendix}
 
-Appendix A and Appendix B report Greeks diagnostics for SPY.
+\section{Full Single-Stock Tables}
+\label{app:single-stock-full-tables}
+
+Table~\ref{tab:stock-return-full} and Table~\ref{tab:stock-greeks-full} provide the complete single-stock results used to summarize this subsection.
+
+\begingroup
+\scriptsize
+\setlength{\tabcolsep}{4pt}
+\begin{longtable}{llrrrrrr}
+\caption{Full single-stock performance statistics by ticker and agent.}\label{tab:stock-return-full} \\
+\toprule
+Ticker & Agent & Win Rate & Sharpe & Sortino & Ann. Return & Ann. Vol. & Max DD \\
+\midrule
+\endfirsthead
+
+\toprule
+Ticker & Agent & Win Rate & Sharpe & Sortino & Ann. Return & Ann. Vol. & Max DD \\
+\midrule
+\endhead
+
+AAPL & \texttt{Agent\_hardThreshold} & 73.17\% & 0.3969 & 0.2537 & 8.21\% & 19.88\% & -21.25\% \\
+AAPL & \texttt{Agent\_Perc}          & 72.22\% & 0.1404 & 0.0941 & 2.95\% & \underline{20.74\%} & -26.44\% \\
+AAPL & \texttt{Agent\_Garch}         & 73.33\% & 0.1402 & 0.0891 & 2.87\% & 20.16\% & -23.40\% \\
+AAPL & \texttt{Agent\_LongTerm}      & \underline{86.67\%} & \underline{0.5435} & \underline{0.3926} & \underline{9.08\%} & 15.99\% & \underline{-16.86\%} \\
+\midrule
+ACMR & \texttt{Agent\_hardThreshold} & 55.56\% & -0.0069 & -0.0065 & -0.27\% & 39.16\% & \underline{-25.42\%} \\
+ACMR & \texttt{Agent\_Perc}          & \underline{61.54\%} & \underline{0.5744} & \underline{0.5040} & \underline{58.52\%} & \underline{80.20\%} & -32.10\% \\
+ACMR & \texttt{Agent\_Garch}         & 60.00\% & 0.4892 & 0.4964 & 24.98\% & 45.58\% & -31.94\% \\
+ACMR & \texttt{Agent\_LongTerm}      & 60.00\% & -0.9640 & -0.4432 & -48.66\% & 69.16\% & -42.17\% \\
+\midrule
+AMD  & \texttt{Agent\_hardThreshold} & 71.43\% & -0.4379 & -0.2366 & -26.84\% & \underline{71.39\%} & -65.30\% \\
+AMD  & \texttt{Agent\_Perc}          & 64.71\% & -0.4454 & -0.2423 & -27.12\% & 71.04\% & -66.78\% \\
+AMD  & \texttt{Agent\_Garch}         & 71.11\% & -0.4153 & -0.2214 & -25.64\% & 71.35\% & -63.65\% \\
+AMD  & \texttt{Agent\_LongTerm}      & \underline{85.71\%} & \underline{-0.0922} & \underline{-0.0424} & \underline{-6.12\%} & 68.56\% & \underline{-59.33\%} \\
+\midrule
+GOOG & \texttt{Agent\_hardThreshold} & 79.49\% & \underline{1.6039} & 1.9659 & 58.84\% & 28.85\% & \underline{-11.57\%} \\
+GOOG & \texttt{Agent\_Perc}          & \underline{81.58\%} & 1.1861 & 1.3496 & 50.25\% & \underline{34.32\%} & -16.75\% \\
+GOOG & \texttt{Agent\_Garch}         & 72.09\% & 1.5513 & \underline{2.0530} & \underline{62.73\%} & 31.39\% & \underline{-11.57\%} \\
+GOOG & \texttt{Agent\_LongTerm}      & 76.32\% & 0.9161 & 1.0031 & 32.45\% & 30.68\% & -22.61\% \\
+\midrule
+INTC & \texttt{Agent\_hardThreshold} & \underline{77.50\%} & \underline{1.4840} & 2.3184 & 124.20\% & 54.40\% & -29.63\% \\
+INTC & \texttt{Agent\_Perc}          & 71.05\% & 1.3589 & \underline{2.8220} & 108.55\% & 54.09\% & \underline{-24.79\%} \\
+INTC & \texttt{Agent\_Garch}         & 72.00\% & \underline{1.4840} & 2.3462 & \underline{129.95\%} & \underline{56.11\%} & -27.41\% \\
+INTC & \texttt{Agent\_LongTerm}      & 76.09\% & 1.0758 & 0.9528 & 47.21\% & 35.94\% & -28.73\% \\
+\midrule
+META & \texttt{Agent\_hardThreshold} & \underline{65.79\%} & -0.1857 & -0.1634 & -5.96\% & 33.10\% & -32.14\% \\
+META & \texttt{Agent\_Perc}          & 65.00\% & -0.3303 & -0.2649 & -9.86\% & 31.41\% & -36.48\% \\
+META & \texttt{Agent\_Garch}         & \underline{65.79\%} & \underline{0.1389} & \underline{0.1267} & \underline{4.79\%} & \underline{33.72\%} & -28.72\% \\
+META & \texttt{Agent\_LongTerm}      & 58.33\% & -0.0927 & -0.0777 & -2.67\% & 29.20\% & \underline{-24.03\%} \\
+\midrule
+TSLA & \texttt{Agent\_hardThreshold} & 68.89\% & \underline{0.7805} & \underline{0.7674} & \underline{29.31\%} & \underline{32.93\%} & -25.02\% \\
+TSLA & \texttt{Agent\_Perc}          & 63.64\% & 0.5477 & 0.5530 & 18.19\% & 30.51\% & -27.21\% \\
+TSLA & \texttt{Agent\_Garch}         & 71.43\% & 0.7275 & 0.7003 & 23.56\% & 29.08\% & -23.68\% \\
+TSLA & \texttt{Agent\_LongTerm}      & \underline{72.34\%} & 0.1001 & 0.0701 & 2.23\% & 21.99\% & \underline{-20.69\%} \\
+\bottomrule
+\end{longtable}
+\endgroup
+
+\begingroup
+\scriptsize
+\setlength{\tabcolsep}{4pt}
+\begin{longtable}{llrrrrrrrr}
+\caption{Full single-stock Greeks attribution percentages by ticker and agent.}\label{tab:stock-greeks-full} \\
+\toprule
+Ticker & Agent & Delta & Gamma & Vega & Theta & Vanna & Volga & Rho & Residual \\
+\midrule
+\endfirsthead
+
+\toprule
+Ticker & Agent & Delta & Gamma & Vega & Theta & Vanna & Volga & Rho & Residual \\
+\midrule
+\endhead
+
+AAPL & \texttt{Agent\_hardThreshold} & \underline{+17.52\%} & -30.20\% & +26.97\% & \underline{+10.41\%} & +3.20\% & -1.70\% & -0.01\% & \underline{-9.99\%} \\
+AAPL & \texttt{Agent\_Perc}          & +9.52\%  & -11.16\% & +21.49\% & +5.86\%  & \underline{+4.14\%} & \underline{+15.59\%} & -0.01\% & -32.22\% \\
+AAPL & \texttt{Agent\_Garch}         & +9.79\%  & -21.20\% & +28.28\% & +8.64\%  & +3.17\% & +7.35\%  & -0.00\% & -21.56\% \\
+AAPL & \texttt{Agent\_LongTerm}      & +10.77\% & \underline{-8.78\%}  & \underline{+46.82\%} & -1.95\%  & +1.41\% & -1.72\%  & \underline{+0.00\%} & -28.56\% \\
+\midrule
+ACMR & \texttt{Agent\_hardThreshold} & +6.44\%  & -7.34\%  & +55.56\% & -8.52\%  & +1.03\% & \underline{+1.92\%}  & +0.00\% & -19.19\% \\
+ACMR & \texttt{Agent\_Perc}          & \underline{+23.47\%} & -6.99\%  & +48.71\% & \underline{-6.22\%}  & -6.62\% & -4.91\%  & +0.02\% & \underline{-3.07\%} \\
+ACMR & \texttt{Agent\_Garch}         & -7.58\%  & +6.03\%  & \underline{+67.53\%} & -6.54\%  & +1.89\% & +1.11\%  & +0.02\% & -9.31\% \\
+ACMR & \texttt{Agent\_LongTerm}      & -1.19\%  & \underline{+36.75\%} & +5.91\%  & -15.02\% & \underline{+10.63\%} & -9.47\% & \underline{+0.06\%} & -20.97\% \\
+\midrule
+AMD  & \texttt{Agent\_hardThreshold} & +7.15\%  & -21.53\% & +8.63\%  & \underline{+8.58\%}  & +3.72\% & +25.47\% & \underline{+0.00\%} & -24.91\% \\
+AMD  & \texttt{Agent\_Perc}          & +6.02\%  & \underline{-13.35\%} & +8.19\%  & +4.76\%  & \underline{+5.05\%} & \underline{+30.28\%} & \underline{-0.00\%} & -32.35\% \\
+AMD  & \texttt{Agent\_Garch}         & \underline{+8.88\%}  & -22.23\% & +13.71\% & +7.24\%  & +4.27\% & +20.53\% & \underline{+0.00\%} & -23.15\% \\
+AMD  & \texttt{Agent\_LongTerm}      & -5.72\%  & -13.49\% & \underline{+50.14\%} & +5.77\%  & -1.82\% & +7.03\%  & \underline{+0.00\%} & \underline{-16.03\%} \\
+\midrule
+GOOG & \texttt{Agent\_hardThreshold} & +12.85\% & -18.27\% & +21.75\% & \underline{+13.61\%} & -1.79\% & +11.25\% & \underline{-0.01\%} & \underline{-20.46\%} \\
+GOOG & \texttt{Agent\_Perc}          & +11.50\% & \underline{-2.96\%}  & +24.81\% & +2.14\%  & -1.25\% & \underline{+20.70\%} & \underline{-0.01\%} & -36.61\% \\
+GOOG & \texttt{Agent\_Garch}         & +14.37\% & -15.67\% & +19.82\% & +9.32\%  & +0.16\% & +14.76\% & \underline{-0.01\%} & -25.89\% \\
+GOOG & \texttt{Agent\_LongTerm}      & \underline{+17.89\%} & -2.98\%  & \underline{+26.98\%} & +3.76\%  & \underline{+0.17\%} & +11.49\% & \underline{-0.01\%} & -36.71\% \\
+\midrule
+INTC & \texttt{Agent\_hardThreshold} & -5.17\%  & +7.87\%  & +20.40\% & \underline{+10.16\%} & +2.78\% & +20.65\% & \underline{-0.00\%} & -32.97\% \\
+INTC & \texttt{Agent\_Perc}          & \underline{+5.30\%}  & \underline{+11.22\%} & +14.44\% & -1.52\%  & +3.31\% & \underline{+24.23\%} & \underline{-0.00\%} & -39.98\% \\
+INTC & \texttt{Agent\_Garch}         & +0.85\%  & -0.51\%  & +31.48\% & +8.82\%  & +4.69\% & +16.82\% & \underline{-0.00\%} & -36.82\% \\
+INTC & \texttt{Agent\_LongTerm}      & -10.42\% & +10.34\% & \underline{+42.03\%} & +3.15\%  & \underline{+5.71\%} & +3.51\%  & \underline{-0.00\%} & \underline{-24.83\%} \\
+\midrule
+META & \texttt{Agent\_hardThreshold} & -19.06\% & -24.77\% & +9.40\%  & +27.99\% & +0.25\% & -3.99\%  & \underline{+0.02\%} & \underline{+14.53\%} \\
+META & \texttt{Agent\_Perc}          & -26.31\% & \underline{-20.21\%} & \underline{+26.12\%} & +9.76\%  & +0.01\% & \underline{+16.33\%} & \underline{+0.02\%} & -1.24\% \\
+META & \texttt{Agent\_Garch}         & -17.56\% & -27.06\% & +9.44\%  & \underline{+33.54\%} & -0.02\% & +0.73\%  & +0.01\% & +11.65\% \\
+META & \texttt{Agent\_LongTerm}      & \underline{+6.50\%}  & -48.47\% & +10.06\% & +22.45\% & \underline{+2.51\%} & +2.28\%  & +0.00\% & +7.72\% \\
+\midrule
+TSLA & \texttt{Agent\_hardThreshold} & \underline{+5.24\%}  & -13.41\% & +50.83\% & \underline{+2.63\%}  & +2.89\% & -24.38\% & \underline{+0.00\%} & \underline{+0.61\%} \\
+TSLA & \texttt{Agent\_Perc}          & +1.06\%  & \underline{+10.34\%} & +32.66\% & -10.97\% & +2.58\% & \underline{+8.57\%}  & \underline{+0.00\%} & -33.79\% \\
+TSLA & \texttt{Agent\_Garch}         & -2.72\%  & +1.94\%  & \underline{+53.48\%} & -4.59\%  & +3.01\% & +1.40\%  & \underline{+0.00\%} & -32.85\% \\
+TSLA & \texttt{Agent\_LongTerm}      & -11.85\% & +5.65\%  & +41.71\% & -3.36\%  & \underline{+3.69\%} & +5.16\%  & \underline{-0.00\%} & -28.58\% \\
+\bottomrule
+\end{longtable}
+\endgroup
 
 \section{Greeks Attribution: Dollar P\&L Time Series}
 \label{app:greeks-line-raw}
@@ -445,14 +629,14 @@ Figure~\ref{fig:qqq-return} and Figure~\ref{fig:qqq-greeks} report the return an
 
 \begin{figure}[H]
   \centering
-  \includegraphics[width=0.70\textwidth]{images/QQQ_return.png}
+  \includegraphics[width=0.85\textwidth]{images/QQQ_return.png}
   \caption{QQQ return diagnostics.}
   \label{fig:qqq-return}
 \end{figure}
 
 \begin{figure}[H]
   \centering
-  \includegraphics[width=0.70\textwidth]{images/QQQ_greeks.png}
+  \includegraphics[width=0.75\textwidth]{images/QQQ_greeks.png}
   \caption{QQQ Greeks diagnostics.}
   \label{fig:qqq-greeks}
 \end{figure}
@@ -464,14 +648,14 @@ Figure~\ref{fig:dia-return} and Figure~\ref{fig:dia-greeks} report the return an
 
 \begin{figure}[H]
   \centering
-  \includegraphics[width=0.70\textwidth]{images/DIA_return.png}
+  \includegraphics[width=0.85\textwidth]{images/DIA_return.png}
   \caption{DIA return diagnostics.}
   \label{fig:dia-return}
 \end{figure}
 
 \begin{figure}[H]
   \centering
-  \includegraphics[width=0.70\textwidth]{images/DIA_greeks.png}
+  \includegraphics[width=0.75\textwidth]{images/DIA_greeks.png}
   \caption{DIA Greeks diagnostics.}
   \label{fig:dia-greeks}
 \end{figure}
