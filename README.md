@@ -133,17 +133,17 @@ Illustrative run from `Back_test.ipynb` (metrics change with data and parameters
 - Agents configured:
   - `Agent_hardThreshold`: `k=1`
   - `Agent_Perc`: `entry_percentile=0.2`
-  - `Agent_Garch`: `entry_threshold=0.5`
-  - `Agent_LongTerm`: `entry_threshold=0.5`, default `long_term_window=126`
+  - `Agent_Garch`: `entry_threshold=1`
+  - `Agent_LongTerm`: `entry_threshold=1`, `long_term_window=60`
 
-**Strategy statistics** (same run):
+**Strategy statistics** (same run, results from **SPY**):
 
 | Agent | Win Rate | Sharpe Ratio | Sortino Ratio | Annual Return | Annual Volatility | Max Drawdown | Calmar Ratio | Kelly's Criteria |
 | :--- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
 | `Agent_hardThreshold` | 75.00% | 1.3248 | 1.1919 | 25.96% | 17.42% | -11.12% | 2.3339 | 7.6042 |
 | `Agent_Perc` | 74.36% | 1.2669 | 1.1843 | 24.85% | 17.52% | -11.12% | 2.2345 | 7.2312 |
-| `Agent_Garch` | 68.18% | 1.0768 | 1.0200 | 23.34% | 19.48% | -14.19% | 1.6446 | 5.5266 |
-| `Agent_LongTerm` | 79.63% | 1.2066 | 1.3323 | 29.50% | 21.43% | -12.32% | 2.3937 | 5.6317 |
+| `Agent_Garch` | 74.47% | 1.0765 | 0.9319 | 21.49% | 18.09% | -14.99% | 1.4338 | 5.9520 |
+| `Agent_LongTerm` | 73.91% | 1.0618 | 1.1015 | 25.56% | 21.44% | -11.95% | 2.1381 | 4.9534 |
 
 ## Greeks Attribution Calculation
 

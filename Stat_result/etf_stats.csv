@@ -1,0 +1,9 @@
+Ticker,Agent,Win Rate,Sharpe,Sortino,Ann. Return,Ann. Vol,Max Drawdown
+QQQ,Agent_hardThreshold,0.8108,0.887,0.6754,0.211,0.2158,-0.2095
+QQQ,Agent_Perc,0.6923,0.9749,1.2191,0.3463,0.305,-0.2295
+QQQ,Agent_Garch,0.7632,1.1106,0.9158,0.2883,0.2281,-0.1981
+QQQ,Agent_LongTerm,0.8,1.7709,1.5282,0.463,0.2148,-0.1483
+DIA,Agent_hardThreshold,0.875,1.5611,1.2112,0.4721,0.2477,-0.2059
+DIA,Agent_Perc,0.8704,2.2303,2.2453,0.9118,0.2906,-0.1877
+DIA,Agent_Garch,0.8545,1.9131,1.7752,0.6801,0.2712,-0.1897
+DIA,Agent_LongTerm,0.8571,2.0476,1.759,0.8161,0.2914,-0.1989

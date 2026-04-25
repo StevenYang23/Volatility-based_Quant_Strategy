@@ -1,4 +1,4 @@
-This is pdfTeX, Version 3.141592653-2.6-1.40.28 (MiKTeX 25.12) (preloaded format=pdflatex 2026.4.19)  25 APR 2026 11:31
+This is pdfTeX, Version 3.141592653-2.6-1.40.28 (MiKTeX 25.12) (preloaded format=pdflatex 2026.4.19)  25 APR 2026 18:27
 entering extended mode
  restricted \write18 enabled.
  file:line:error style messages enabled.
@@ -507,80 +507,128 @@ Package microtype Info: Loading generic protrusion settings for font family
 {C:/Users/Lenovo/AppData/Local/MiKTeX/fonts/map/pdftex/pdftex.map}{C:/Users/Lenovo/AppData/Local/Programs/MiKTeX/fonts/enc/dvips/lm/lm-ec.enc}]
 LaTeX Font Info:    External font `lmex10' loaded for size
 (Font)              <10.95> on input line 87.
-<images/pnl_call.png, id=105, 578.16pt x 361.35pt>
+<images/pnl_call.png, id=121, 578.16pt x 361.35pt>
 File: images/pnl_call.png Graphic file (type png)
 <use images/pnl_call.png>
 Package pdftex.def Info: images/pnl_call.png  used on input line 106.
-(pdftex.def)             Requested size: 225.4804pt x 140.92041pt.
-<images/pnl_put.png, id=107, 578.16pt x 361.35pt>
+(pdftex.def)             Requested size: 197.29623pt x 123.3095pt.
+<images/pnl_put.png, id=123, 578.16pt x 361.35pt>
 File: images/pnl_put.png Graphic file (type png)
 <use images/pnl_put.png>
 Package pdftex.def Info: images/pnl_put.png  used on input line 110.
-(pdftex.def)             Requested size: 225.4804pt x 140.92041pt.
+(pdftex.def)             Requested size: 197.29623pt x 123.3095pt.
  [2
 
 {C:/Users/Lenovo/AppData/Local/Programs/MiKTeX/fonts/enc/dvips/lm/lm-mathit.enc}{C:/Users/Lenovo/AppData/Local/Programs/MiKTeX/fonts/enc/dvips/lm/lm-rm.enc}{C:/Users/Lenovo/AppData/Local/Programs/MiKTeX/fonts/enc/dvips/lm/lm-mathsy.enc}]
-<images/pnl_long_straddle.png, id=116, 578.16pt x 361.35pt>
+<images/pnl_long_straddle.png, id=132, 578.16pt x 361.35pt>
 File: images/pnl_long_straddle.png Graphic file (type png)
 <use images/pnl_long_straddle.png>
 Package pdftex.def Info: images/pnl_long_straddle.png  used on input line 120.
-(pdftex.def)             Requested size: 225.4804pt x 140.92041pt.
-<images/pnl_short_straddle.png, id=117, 578.16pt x 361.35pt>
+(pdftex.def)             Requested size: 197.29623pt x 123.3095pt.
+<images/pnl_short_straddle.png, id=133, 578.16pt x 361.35pt>
 File: images/pnl_short_straddle.png Graphic file (type png)
 <use images/pnl_short_straddle.png>
 Package pdftex.def Info: images/pnl_short_straddle.png  used on input line 124.
-(pdftex.def)             Requested size: 225.4804pt x 140.92041pt.
+(pdftex.def)             Requested size: 197.29623pt x 123.3095pt.
  [3 <./images/pnl_call.png> <./images/pnl_put.png> <./images/pnl_long_straddle.png> <./images/pnl_short_straddle.png>] [4]
-<images/VRP.png, id=136, 977.90344pt x 412.54124pt>
+<images/VRP.png, id=152, 977.90344pt x 412.54124pt>
 File: images/VRP.png Graphic file (type png)
 <use images/VRP.png>
 Package pdftex.def Info: images/VRP.png  used on input line 224.
 (pdftex.def)             Requested size: 432.17375pt x 182.31815pt.
  [5{C:/Users/Lenovo/AppData/Local/Programs/MiKTeX/fonts/enc/dvips/lm/lm-mathex.enc}] [6 <./images/VRP.png>]
-Underfull \hbox (badness 10000) in paragraph at lines 271--271
+Underfull \hbox (badness 10000) in paragraph at lines 280--280
 []|\T1/lmr/m/n/10 (+20) z-score crosses
  []
 
 
-Underfull \hbox (badness 10000) in paragraph at lines 271--271
+Underfull \hbox (badness 10000) in paragraph at lines 280--280
 []|\T1/lmr/m/n/10 (+20) z-score crosses
  []
 
 
-Underfull \hbox (badness 10000) in paragraph at lines 271--271
+Underfull \hbox (badness 10000) in paragraph at lines 280--280
 []|\T1/lmr/m/n/10 (+20) z-score crosses
  []
 
 
-Underfull \hbox (badness 10000) in paragraph at lines 271--271
-[]|\T1/lmr/m/n/10 (+20) Long-horizon IV
+Underfull \hbox (badness 10000) in paragraph at lines 280--280
+[]|\T1/lmr/m/n/10 (+20) Long-horizon RV
  []
 
 
-Underfull \hbox (badness 10000) in paragraph at lines 271--271
+Underfull \hbox (badness 10000) in paragraph at lines 280--280
 []|\T1/lmr/m/n/10 (+20) z-score crosses
  []
 
-[7] [8] (main.aux)
+[7]
+LaTeX Font Info:    External font `lmex10' loaded for size
+(Font)              <9> on input line 342.
+<images/Return_curve.png, id=176, 864.22874pt x 319.94531pt>
+File: images/Return_curve.png Graphic file (type png)
+<use images/Return_curve.png>
+Package pdftex.def Info: images/Return_curve.png  used on input line 350.
+(pdftex.def)             Requested size: 450.96797pt x 166.95346pt.
+ [8]
+<images/Greeks_attribution.png, id=187, 1010.3346pt x 718.3638pt>
+File: images/Greeks_attribution.png Graphic file (type png)
+<use images/Greeks_attribution.png>
+Package pdftex.def Info: images/Greeks_attribution.png  used on input line 385.
+(pdftex.def)             Requested size: 399.29463pt x 283.90953pt.
+ [9 <./images/Return_curve.png>]
+<images/greeks_line_raw.png, id=196, 1261.8342pt x 2327.8167pt>
+File: images/greeks_line_raw.png Graphic file (type png)
+<use images/greeks_line_raw.png>
+Package pdftex.def Info: images/greeks_line_raw.png  used on input line 424.
+(pdftex.def)             Requested size: 328.82707pt x 606.60333pt.
+ [10 <./images/Greeks_attribution.png>] [11 <./images/greeks_line_raw.png>]
+<images/Greeks_line.png, id=211, 1073.2095pt x 1573.3179pt>
+File: images/Greeks_line.png Graphic file (type png)
+<use images/Greeks_line.png>
+Package pdftex.def Info: images/Greeks_line.png  used on input line 436.
+(pdftex.def)             Requested size: 328.82707pt x 482.05789pt.
+<images/QQQ_return.png, id=214, 1078.9911pt x 858.5676pt>
+File: images/QQQ_return.png Graphic file (type png)
+<use images/QQQ_return.png>
+Package pdftex.def Info: images/QQQ_return.png  used on input line 448.
+(pdftex.def)             Requested size: 328.82707pt x 261.64656pt.
+ [12 <./images/Greeks_line.png>]
+<images/QQQ_greeks.png, id=223, 1010.3346pt x 718.3638pt>
+File: images/QQQ_greeks.png Graphic file (type png)
+<use images/QQQ_greeks.png>
+Package pdftex.def Info: images/QQQ_greeks.png  used on input line 455.
+(pdftex.def)             Requested size: 328.82707pt x 233.80527pt.
+<images/DIA_return.png, id=226, 1078.9911pt x 858.5676pt>
+File: images/DIA_return.png Graphic file (type png)
+<use images/DIA_return.png>
+Package pdftex.def Info: images/DIA_return.png  used on input line 467.
+(pdftex.def)             Requested size: 328.82707pt x 261.64656pt.
+ [13 <./images/QQQ_return.png> <./images/QQQ_greeks.png>]
+<images/DIA_greeks.png, id=236, 1008.1665pt x 718.3638pt>
+File: images/DIA_greeks.png Graphic file (type png)
+<use images/DIA_greeks.png>
+Package pdftex.def Info: images/DIA_greeks.png  used on input line 474.
+(pdftex.def)             Requested size: 328.82707pt x 234.29852pt.
+ [14 <./images/DIA_return.png> <./images/DIA_greeks.png>] (main.aux)
  ***********
 LaTeX2e <2025-11-01>
 L3 programming layer <2025-12-24>
  ***********
 Package rerunfilecheck Info: File `main.out' has not changed.
-(rerunfilecheck)             Checksum: C63C36B2304B877F2F696F6B572A0A2F;3449.
+(rerunfilecheck)             Checksum: 8C6BAAD4EE5810275E779B767A4412EF;4234.
  ) 
 Here is how much of TeX's memory you used:
- 13064 strings out of 467871
- 207588 string characters out of 5417892
- 664268 words of memory out of 5000000
- 41552 multiletter control sequences out of 15000+600000
- 704404 words of font info for 168 fonts, out of 8000000 for 9000
+ 13189 strings out of 467871
+ 210163 string characters out of 5417892
+ 664087 words of memory out of 5000000
+ 41643 multiletter control sequences out of 15000+600000
+ 712486 words of font info for 181 fonts, out of 8000000 for 9000
  1141 hyphenation exceptions out of 8191
- 75i,14n,79p,1075b,477s stack positions out of 10000i,1000n,20000p,200000b,200000s
-<C:/Users/Lenovo/AppData/Local/Programs/MiKTeX/fonts/type1/public/lm/lmbx10.pfb><C:/Users/Lenovo/AppData/Local/Programs/MiKTeX/fonts/type1/public/lm/lmbx12.pfb><C:/Users/Lenovo/AppData/Local/Programs/MiKTeX/fonts/type1/public/lm/lmex10.pfb><C:/Users/Lenovo/AppData/Local/Programs/MiKTeX/fonts/type1/public/lm/lmmi10.pfb><C:/Users/Lenovo/AppData/Local/Programs/MiKTeX/fonts/type1/public/lm/lmmi7.pfb><C:/Users/Lenovo/AppData/Local/Programs/MiKTeX/fonts/type1/public/lm/lmmi8.pfb><C:/Users/Lenovo/AppData/Local/Programs/MiKTeX/fonts/type1/public/lm/lmr10.pfb><C:/Users/Lenovo/AppData/Local/Programs/MiKTeX/fonts/type1/public/lm/lmr12.pfb><C:/Users/Lenovo/AppData/Local/Programs/MiKTeX/fonts/type1/public/lm/lmr7.pfb><C:/Users/Lenovo/AppData/Local/Programs/MiKTeX/fonts/type1/public/lm/lmr8.pfb><C:/Users/Lenovo/AppData/Local/Programs/MiKTeX/fonts/type1/public/lm/lmri10.pfb><C:/Users/Lenovo/AppData/Local/Programs/MiKTeX/fonts/type1/public/lm/lmsy10.pfb><C:/Users/Lenovo/AppData/Local/Programs/MiKTeX/fonts/type1/public/lm/lmsy8.pfb><C:/Users/Lenovo/AppData/Local/Programs/MiKTeX/fonts/type1/public/lm/lmtt10.pfb><C:/Users/Lenovo/AppData/Local/Programs/MiKTeX/fonts/type1/public/lm/lmtt12.pfb>
-Output written on main.pdf (8 pages, 891145 bytes).
+ 75i,14n,79p,1075b,461s stack positions out of 10000i,1000n,20000p,200000b,200000s
+<C:/Users/Lenovo/AppData/Local/Programs/MiKTeX/fonts/type1/public/lm/lmbx10.pfb><C:/Users/Lenovo/AppData/Local/Programs/MiKTeX/fonts/type1/public/lm/lmbx12.pfb><C:/Users/Lenovo/AppData/Local/Programs/MiKTeX/fonts/type1/public/lm/lmex10.pfb><C:/Users/Lenovo/AppData/Local/Programs/MiKTeX/fonts/type1/public/lm/lmmi10.pfb><C:/Users/Lenovo/AppData/Local/Programs/MiKTeX/fonts/type1/public/lm/lmmi7.pfb><C:/Users/Lenovo/AppData/Local/Programs/MiKTeX/fonts/type1/public/lm/lmmi8.pfb><C:/Users/Lenovo/AppData/Local/Programs/MiKTeX/fonts/type1/public/lm/lmr10.pfb><C:/Users/Lenovo/AppData/Local/Programs/MiKTeX/fonts/type1/public/lm/lmr12.pfb><C:/Users/Lenovo/AppData/Local/Programs/MiKTeX/fonts/type1/public/lm/lmr7.pfb><C:/Users/Lenovo/AppData/Local/Programs/MiKTeX/fonts/type1/public/lm/lmr8.pfb><C:/Users/Lenovo/AppData/Local/Programs/MiKTeX/fonts/type1/public/lm/lmr9.pfb><C:/Users/Lenovo/AppData/Local/Programs/MiKTeX/fonts/type1/public/lm/lmri10.pfb><C:/Users/Lenovo/AppData/Local/Programs/MiKTeX/fonts/type1/public/lm/lmsy10.pfb><C:/Users/Lenovo/AppData/Local/Programs/MiKTeX/fonts/type1/public/lm/lmsy8.pfb><C:/Users/Lenovo/AppData/Local/Programs/MiKTeX/fonts/type1/public/lm/lmtt10.pfb><C:/Users/Lenovo/AppData/Local/Programs/MiKTeX/fonts/type1/public/lm/lmtt12.pfb><C:/Users/Lenovo/AppData/Local/Programs/MiKTeX/fonts/type1/public/lm/lmtt9.pfb>
+Output written on main.pdf (14 pages, 2867204 bytes).
 PDF statistics:
- 246 PDF objects out of 1000 (max. 8388607)
- 40 named destinations out of 1000 (max. 500000)
- 42194 words of extra memory for PDF output out of 42996 (max. 10000000)
+ 337 PDF objects out of 1000 (max. 8388607)
+ 59 named destinations out of 1000 (max. 500000)
+ 47386 words of extra memory for PDF output out of 51595 (max. 10000000)
 

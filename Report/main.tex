@@ -101,11 +101,11 @@ so the position benefits from sufficiently large moves in either direction. This
 
 \begin{figure}[H]
   \centering
-  \begin{minipage}{0.48\textwidth}
+  \begin{minipage}{0.42\textwidth}
     \centering
     \includegraphics[width=\linewidth]{images/pnl_call.png}
   \end{minipage}\hfill
-  \begin{minipage}{0.48\textwidth}
+  \begin{minipage}{0.42\textwidth}
     \centering
     \includegraphics[width=\linewidth]{images/pnl_put.png}
   \end{minipage}
@@ -115,11 +115,11 @@ so the position benefits from sufficiently large moves in either direction. This
 
 \begin{figure}[H]
   \centering
-  \begin{minipage}{0.48\textwidth}
+  \begin{minipage}{0.42\textwidth}
     \centering
     \includegraphics[width=\linewidth]{images/pnl_long_straddle.png}
   \end{minipage}\hfill
-  \begin{minipage}{0.48\textwidth}
+  \begin{minipage}{0.42\textwidth}
     \centering
     \includegraphics[width=\linewidth]{images/pnl_short_straddle.png}
   \end{minipage}
@@ -228,19 +228,28 @@ This specification is the most familiar and transparent benchmark in the report,
 
 \subsubsection{GARCH-based benchmark}
 
-The second benchmark replaces backward-looking realized volatility with a model-based forecast from a GJR-GARCH(1,1) specification with Student-$t$ innovations. This choice allows for volatility clustering and asymmetric responses to negative returns, both of which are common in equity data. The model is estimated on a trailing window, refit periodically, and projected forward over the remaining trading days to the option expiry.
+The second benchmark addresses an important mismatch in a plain VRP comparison. Implied volatility reflects the market's expectation of volatility from today to option expiry, while realized volatility is computed from historical returns and does not guarantee persistence into the future. In other words, VRP compares a backward-looking statistic with a forward-looking market expectation.
+
+To make the comparison more consistent in horizon, this benchmark replaces backward-looking realized volatility with a model-based forecast from a GJR-GARCH(1,1) specification with Student-$t$ innovations. This choice allows for volatility clustering and asymmetric responses to negative returns, both of which are common in equity data. The model is estimated on a trailing window, refit periodically, and projected forward over the remaining trading days to the option expiry.
 
 The corresponding spread is
 \[
 \mathrm{IV}_t-\widehat{\mathrm{RV}}^{\mathrm{GARCH}}_t.
 \]
 This benchmark is designed to compare current option-implied volatility with a forward-looking conditional volatility estimate rather than with a purely historical measure.
+Operationally, the signal asks whether market-implied future volatility is aligned with model-predicted future volatility.
 
-\subsubsection{Long-horizon implied-volatility benchmark}
+\subsubsection{Long-horizon realized-volatility benchmark}
 
-A third benchmark compares current straddle implied volatility with a slow-moving historical average of past implied volatilities. Specifically, it uses the mean of the prior 126 observations of straddle implied volatility as a long-horizon anchor. The corresponding spread is therefore a measure of whether current option pricing is rich or cheap relative to the option market's own longer-run level.
+A third benchmark compares current straddle implied volatility with a slow-moving historical average of realized volatility. Specifically, it uses the mean of the prior 60 observations of daily realized volatility as a long-horizon anchor. The corresponding spread is therefore
+\[
+\mathrm{IV}_t-\overline{\mathrm{RV}}^{\mathrm{long}}_t,
+\]
+where $\overline{\mathrm{RV}}^{\mathrm{long}}_t$ is computed from past values only.
 
-This benchmark differs conceptually from the first two. It does not ask whether implied volatility is high relative to recent realized volatility or to a model forecast of realized volatility. Instead, it asks whether implied volatility is high relative to its own historical norm.
+The economic logic is a convergence chain. Near expiry, option-implied volatility should converge to instantaneous realized volatility. A second empirical observation is that realized volatility itself tends to mean-revert. Combining these ideas gives a practical hierarchy: IV converges to RV, and RV converges to its long-horizon mean; therefore IV is expected to gravitate toward long-horizon RV as expiry approaches.
+
+This benchmark differs conceptually from the first two. It does not compare implied volatility with the most recent realized-volatility estimate or with a model-based forecast for option expiry. Instead, it compares implied volatility with a slow-moving historical level that realized volatility itself tends to revisit over time.
 
 \subsubsection{Z-score normalization}
 
@@ -252,7 +261,7 @@ where $X_t$ denotes the spread of interest and $\mu_{t,20}(X)$ and $\sigma_{t,20
 
 \subsubsection{Signal summary}
 
-The implementation includes four agents built on these benchmarks. The hard-threshold rule and percentile rule both use the classic VRP idea, but they differ in how entry thresholds are defined. The GARCH-based rule replaces realized volatility with a conditional forecast. The long-horizon rule compares current implied volatility with its own slow-moving historical mean.
+The implementation includes four agents built on these benchmarks. The hard-threshold rule and percentile rule both use the classic VRP idea, but they differ in how entry thresholds are defined. The GARCH-based rule replaces realized volatility with a conditional forecast. The long-horizon rule compares current implied volatility with a slow-moving historical mean of realized volatility.
 
 \begin{table}[H]
 \centering
@@ -266,7 +275,7 @@ Agent & Long-volatility entry & Short-volatility entry & Exit rule \\
 Hard-threshold VRP & $Z_t(\mathrm{IV}-\mathrm{RV})<-k$ & $Z_t(\mathrm{IV}-\mathrm{RV})>k$ & z-score crosses zero \\
 Percentile VRP & rolling $Z_t(\mathrm{IV}-\mathrm{RV})$ in lower empirical tail & rolling $Z_t(\mathrm{IV}-\mathrm{RV})$ in upper empirical tail & z-score crosses historical median \\
 GARCH spread & $Z_t(\mathrm{IV}-\widehat{\mathrm{RV}}^{\mathrm{GARCH}})<-c$ & $Z_t(\mathrm{IV}-\widehat{\mathrm{RV}}^{\mathrm{GARCH}})>c$ & z-score crosses zero \\
-Long-horizon IV spread & $Z_t(\mathrm{IV}-\overline{\mathrm{IV}}^{\mathrm{long}})<-c$ & $Z_t(\mathrm{IV}-\overline{\mathrm{IV}}^{\mathrm{long}})>c$ & z-score crosses zero \\
+Long-horizon RV spread & $Z_t(\mathrm{IV}-\overline{\mathrm{RV}}^{\mathrm{long}})<-c$ & $Z_t(\mathrm{IV}-\overline{\mathrm{RV}}^{\mathrm{long}})>c$ & z-score crosses zero \\
 \bottomrule
 \end{tabularx}
 \end{table}
@@ -300,8 +309,9 @@ Agent & Parameter & Value \\
 \midrule
 Hard-threshold VRP & $k$ & 1.0 \\
 Percentile VRP & Entry percentile & 0.20 \\
-GARCH spread & Entry threshold $c$ & 0.5 \\
-Long-horizon IV spread & Entry threshold $c$ & 0.5 \\
+GARCH spread & Entry threshold $c$ & 1.0 \\
+Long-horizon IV spread & Entry threshold $c$ & 1.0 \\
+Long-horizon IV spread & Long-term RV window & 60 \\
 \bottomrule
 \end{tabularx}
 \end{table}
@@ -313,20 +323,69 @@ All parameters are fixed before the backtest is run. They are not fitted, traine
 
 \subsection{Performance on SPY}
 \subsubsection{Return summary}
+\begin{table}[H]
+\centering
+\footnotesize
+\caption{SPY performance summary under updated parameter settings.}
+\label{tab:spy-return-summary}
+\resizebox{\textwidth}{!}{%
+\begin{tabular}{lrrrrrrrr}
+\toprule
+Agent & Win Rate & Sharpe & Sortino & Ann. Return & Ann. Vol. & Max DD & Calmar & Kelly \\
+\midrule
+\texttt{Agent\_hardThreshold} & 75.00\% & 1.3248 & 1.1919 & 25.96\% & 17.42\% & -11.12\% & 2.3339 & 7.6042 \\
+\texttt{Agent\_Perc} & 74.36\% & 1.2669 & 1.1843 & 24.85\% & 17.52\% & -11.12\% & 2.2345 & 7.2312 \\
+\texttt{Agent\_Garch} & 74.47\% & 1.0765 & 0.9319 & 21.49\% & 18.09\% & -14.99\% & 1.4338 & 5.9520 \\
+\texttt{Agent\_LongTerm} & 73.91\% & 1.0618 & 1.1015 & 25.56\% & 21.44\% & -11.95\% & 2.1381 & 4.9534 \\
+\bottomrule
+\end{tabular}%
+}
+\end{table}
+Table~\ref{tab:spy-return-summary} summarizes risk-adjusted performance. \texttt{Agent\_hardThreshold} delivers the strongest Sharpe ratio (1.3248) and Calmar ratio (2.3339). \texttt{Agent\_Perc} is close in both return and risk metrics. \texttt{Agent\_LongTerm} achieves high annual return (25.56\%) with higher volatility (21.44\%), while \texttt{Agent\_Garch} remains profitable but with lower risk-adjusted efficiency in this run.
+
+Figure~\ref{fig:return-curve} reports cumulative value-ratio paths (top panel) and daily return series (bottom panel) for SPY and the four strategy agents under the updated parameter set. All four agents outperform the underlying over the sample, with final value ratios clustered around 1.45--1.57 versus roughly 1.30 for SPY.
+
+\begin{figure}[H]
+  \centering
+  \includegraphics[width=0.96\textwidth]{images/Return_curve.png}
+  \caption{SPY cumulative return (value ratio) and daily return comparison across agents.}
+  \label{fig:return-curve}
+\end{figure}
+
+
 
 \subsubsection{P\&L attribution}
 
-Daily P\&L is measured as the change in the marked value of the option position plus the P\&L of the hedge inventory, including dividend adjustments. For one option lot of size $L=100$, if $q_t\in\{-1,0,1\}$ denotes the number of straddle lots held from $t$ to $t+1$, $h_t$ denotes hedge shares, and the straddle price is the sum of the call and put closes, then total daily P\&L is
+Daily P\&L is decomposed via a second-order Greek expansion:
 \[
-\mathrm{PnL}_t=(q_tL)\big(P^{\mathrm{straddle}}_{t+1}-P^{\mathrm{straddle}}_t\big)+h_t\,\Delta S_t^{\mathrm{adj}}.
+\mathrm{d}V \approx
+\underbrace{\Delta\,\mathrm{d}S}_{\text{Delta}}
++\underbrace{\frac{1}{2}\Gamma\,\mathrm{d}S^2}_{\text{Gamma}}
++\underbrace{\nu\,\mathrm{d}\sigma}_{\text{Vega}}
++\underbrace{\Theta\,\mathrm{d}t}_{\text{Theta}}
++\underbrace{\rho\,\mathrm{d}r}_{\text{Rho}}
++\underbrace{\text{Vanna}\,\mathrm{d}S\,\mathrm{d}\sigma}_{\text{Vanna}}
++\underbrace{\frac{1}{2}\text{Volga}\,(\mathrm{d}\sigma)^2}_{\text{Volga}}
++\varepsilon.
+\]
+The P\&L from delta re-hedging trades is merged into the Gamma term, so the Gamma attribution captures both the convexity gain and the realized cost or benefit of maintaining the hedge.
+
+For each Greek component $i$, the reported percentage contribution is computed as
+\[
+\text{Greek \%}_i=
+\frac{\text{Greek}_i\text{ summed attribution}}
+{\sum_j \left|\text{Greek}_j\text{ summed attribution}\right|}
+\times 100.
 \]
 
-To understand where this P\&L comes from, the backtest attributes it to delta, gamma, vega, vanna, volga, theta, rho, and a residual term. The residual captures higher-order effects, discrete hedging, model mismatch, and any price change not explained by the local Greek approximation. The identity is
-\[
-\mathrm{PnL}_t = \mathrm{Delta}_t + \mathrm{Gamma}_t + \mathrm{Vega}_t + \mathrm{Vanna}_t + \mathrm{Volga}_t + \mathrm{Theta}_t + \mathrm{Rho}_t + \mathrm{Residual}_t.
-\]
+Figure~\ref{fig:greeks-attribution} shows the summed attribution breakdown for each agent. Vega is the dominant P\&L source across all strategies, confirming that returns are primarily driven by volatility mispricing rather than directional exposure. Notably, \texttt{Agent\_LongTerm} records the highest vega attribution (58.2\%), indicating that the long-horizon realized-volatility signal is the most effective at capturing volatility mispricing and benefiting from implied volatility mean-reversion.
 
-This attribution matters because a profitable volatility strategy should not derive its results mainly from unintended net equity exposure. In a well-functioning delta-hedged straddle strategy, vega and gamma-theta dynamics should be the main drivers, while the delta contribution should remain modest on average.
+\begin{figure}[H]
+  \centering
+  \includegraphics[width=0.85\textwidth]{images/Greeks_attribution.png}
+  \caption{Summed Greeks attribution breakdown by strategy agent on SPY.}
+  \label{fig:greeks-attribution}
+\end{figure}
 
 \subsection{Performance on other ETFs}
 
@@ -348,5 +407,73 @@ Bossu, S\'ebastien (2014).
 Wiley Finance Series, John Wiley \& Sons, Inc., Hoboken, NJ.
 
 \end{thebibliography}
+
+
+
+\appendix
+
+Appendix A and Appendix B report Greeks diagnostics for SPY.
+
+\section{Greeks Attribution: Dollar P\&L Time Series}
+\label{app:greeks-line-raw}
+
+Figure~\ref{fig:greeks-line-raw} shows the daily dollar P\&L contribution of each Greek component across the full backtest period. Each panel corresponds to one strategy agent and breaks down the daily total P\&L into delta, gamma, vega, theta, vanna, volga, rho, and residual buckets. The time series view complements the pie chart by revealing when and for how long each risk factor dominated, and where attribution spikes occurred.
+
+\begin{figure}[H]
+  \centering
+  \includegraphics[width=0.70\textwidth]{images/greeks_line_raw.png}
+  \caption{Daily dollar P\&L attribution by Greek component for each agent on SPY.}
+  \label{fig:greeks-line-raw}
+\end{figure}
+
+\section{Greeks Exposure Over Time}
+\label{app:greeks-line}
+
+Figure~\ref{fig:greeks-line} shows the evolution of Greeks exposure over the backtest period. Unlike the dollar attribution series, this plot tracks the raw sensitivity levels (e.g.\ net vega, net delta, net gamma) as the position changes, providing insight into how risk exposures build up and unwind across entry, holding, and exit phases.
+
+\begin{figure}[H]
+  \centering
+  \includegraphics[width=0.70\textwidth]{images/Greeks_line.png}
+  \caption{Greeks exposure over time for each agent on SPY.}
+  \label{fig:greeks-line}
+\end{figure}
+
+\section{QQQ: Return and Greeks}
+\label{app:qqq-return-greeks}
+
+Figure~\ref{fig:qqq-return} and Figure~\ref{fig:qqq-greeks} report the return and Greeks diagnostics for QQQ.
+
+\begin{figure}[H]
+  \centering
+  \includegraphics[width=0.70\textwidth]{images/QQQ_return.png}
+  \caption{QQQ return diagnostics.}
+  \label{fig:qqq-return}
+\end{figure}
+
+\begin{figure}[H]
+  \centering
+  \includegraphics[width=0.70\textwidth]{images/QQQ_greeks.png}
+  \caption{QQQ Greeks diagnostics.}
+  \label{fig:qqq-greeks}
+\end{figure}
+
+\section{DIA: Return and Greeks}
+\label{app:dia-return-greeks}
+
+Figure~\ref{fig:dia-return} and Figure~\ref{fig:dia-greeks} report the return and Greeks diagnostics for DIA.
+
+\begin{figure}[H]
+  \centering
+  \includegraphics[width=0.70\textwidth]{images/DIA_return.png}
+  \caption{DIA return diagnostics.}
+  \label{fig:dia-return}
+\end{figure}
+
+\begin{figure}[H]
+  \centering
+  \includegraphics[width=0.70\textwidth]{images/DIA_greeks.png}
+  \caption{DIA Greeks diagnostics.}
+  \label{fig:dia-greeks}
+\end{figure}
 
 \end{document}

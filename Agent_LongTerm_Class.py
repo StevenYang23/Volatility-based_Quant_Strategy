@@ -44,8 +44,8 @@ class Agent_LongTerm:
         self.residual = []
         self.position_state_for_pnl = []
 
-        self._iv_buf = []
-        self._iv_buf_max = max(self.long_term_window * 4, 512)
+        self._rv_buf = []
+        self._rv_buf_max = max(self.long_term_window * 4, 512)
         self._spread_history = []
         self.longterm_direction_signal = []
         self.long_term_mean_history = []
@@ -199,7 +199,7 @@ class Agent_LongTerm:
         self.iv_longterm_spread_history.append(np.nan)
 
     # ------------------------------------------------------------------
-    # Signal: rolling mean IV (past window only) vs current IV
+    # Signal: current IV vs rolling mean of prior RV values
     # ------------------------------------------------------------------
 
     def trade(self, data):
@@ -212,30 +212,36 @@ class Agent_LongTerm:
             return
 
         curr_iv = data.get("Straddle_imp_vol", np.nan)
+        curr_rv = data.get("RV", np.nan)
         if pd.isna(curr_iv) or not np.isfinite(curr_iv):
             self._append_signal_nan(direction=0)
             self.prev_data = data
             return
 
-        if len(self._iv_buf) < self.long_term_window:
+        if pd.isna(curr_rv) or not np.isfinite(curr_rv):
             self._append_signal_nan(direction=0)
-            self._iv_buf.append(float(curr_iv))
-            if len(self._iv_buf) > self._iv_buf_max:
-                self._iv_buf = self._iv_buf[-self._iv_buf_max :]
             self.prev_data = data
             return
 
-        window_iv = self._iv_buf[-self.long_term_window :]
-        long_term_mean = float(np.mean(window_iv))
+        if len(self._rv_buf) < self.long_term_window:
+            self._append_signal_nan(direction=0)
+            self._rv_buf.append(float(curr_rv))
+            if len(self._rv_buf) > self._rv_buf_max:
+                self._rv_buf = self._rv_buf[-self._rv_buf_max :]
+            self.prev_data = data
+            return
+
+        window_rv = self._rv_buf[-self.long_term_window :]
+        long_term_mean = float(np.mean(window_rv))
         spread = float(curr_iv) - long_term_mean
 
         self._spread_history.append(spread)
         self.long_term_mean_history.append(long_term_mean)
         self.iv_longterm_spread_history.append(spread)
 
-        self._iv_buf.append(float(curr_iv))
-        if len(self._iv_buf) > self._iv_buf_max:
-            self._iv_buf = self._iv_buf[-self._iv_buf_max :]
+        self._rv_buf.append(float(curr_rv))
+        if len(self._rv_buf) > self._rv_buf_max:
+            self._rv_buf = self._rv_buf[-self._rv_buf_max :]
 
         if len(self._spread_history) < self._MIN_SPREAD_OBS:
             self.longterm_direction_signal.append(0)
@@ -390,6 +396,7 @@ class Agent_LongTerm:
             "actual_delta": self.actual_delta,
             "position_state_for_pnl": self.position_state_for_pnl,
             "longterm_direction_signal": self.longterm_direction_signal,
+            "long_term_mean_rv": self.long_term_mean_history,
             "long_term_mean_iv": self.long_term_mean_history,
             "iv_longterm_spread": self.iv_longterm_spread_history,
         }
