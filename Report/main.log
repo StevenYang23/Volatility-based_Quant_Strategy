@@ -1,4 +1,4 @@
-This is pdfTeX, Version 3.141592653-2.6-1.40.28 (MiKTeX 25.12) (preloaded format=pdflatex 2026.4.19)  26 APR 2026 12:23
+This is pdfTeX, Version 3.141592653-2.6-1.40.28 (MiKTeX 25.12) (preloaded format=pdflatex 2026.4.19)  26 APR 2026 12:43
 entering extended mode
  restricted \write18 enabled.
  file:line:error style messages enabled.
@@ -510,22 +510,22 @@ Package microtype Info: Loading generic protrusion settings for font family
 
 
 {C:/Users/Lenovo/AppData/Local/MiKTeX/fonts/map/pdftex/pdftex.map}{C:/Users/Lenovo/AppData/Local/Programs/MiKTeX/fonts/enc/dvips/base/8r.enc}]
-<images/pnl_call.png, id=153, 578.16pt x 361.35pt>
+<images/pnl_call.png, id=169, 578.16pt x 361.35pt>
 File: images/pnl_call.png Graphic file (type png)
 <use images/pnl_call.png>
 Package pdftex.def Info: images/pnl_call.png  used on input line 84.
 (pdftex.def)             Requested size: 166.94296pt x 104.33669pt.
-<images/pnl_put.png, id=155, 578.16pt x 361.35pt>
+<images/pnl_put.png, id=171, 578.16pt x 361.35pt>
 File: images/pnl_put.png Graphic file (type png)
 <use images/pnl_put.png>
 Package pdftex.def Info: images/pnl_put.png  used on input line 88.
 (pdftex.def)             Requested size: 166.94296pt x 104.33669pt.
-<images/pnl_long_straddle.png, id=156, 578.16pt x 361.35pt>
+<images/pnl_long_straddle.png, id=172, 578.16pt x 361.35pt>
 File: images/pnl_long_straddle.png Graphic file (type png)
 <use images/pnl_long_straddle.png>
 Package pdftex.def Info: images/pnl_long_straddle.png  used on input line 98.
 (pdftex.def)             Requested size: 166.94296pt x 104.33669pt.
-<images/pnl_short_straddle.png, id=157, 578.16pt x 361.35pt>
+<images/pnl_short_straddle.png, id=173, 578.16pt x 361.35pt>
 File: images/pnl_short_straddle.png Graphic file (type png)
 <use images/pnl_short_straddle.png>
 Package pdftex.def Info: images/pnl_short_straddle.png  used on input line 102.
@@ -533,94 +533,90 @@ Package pdftex.def Info: images/pnl_short_straddle.png  used on input line 102.
  [2
 
  <./images/pnl_call.png> <./images/pnl_put.png>] [3 <./images/pnl_long_straddle.png> <./images/pnl_short_straddle.png>] [4]
-<images/VRP.png, id=190, 977.90344pt x 412.54124pt>
+<images/VRP.png, id=206, 977.90344pt x 412.54124pt>
 File: images/VRP.png Graphic file (type png)
 <use images/VRP.png>
 Package pdftex.def Info: images/VRP.png  used on input line 198.
 (pdftex.def)             Requested size: 365.68546pt x 154.26823pt.
  [5 <./images/VRP.png>] [6] [7]
-<images/Return_curve.png, id=227, 864.22874pt x 319.94531pt>
+<images/Return_curve.png, id=243, 864.22874pt x 319.94531pt>
 File: images/Return_curve.png Graphic file (type png)
 <use images/Return_curve.png>
 Package pdftex.def Info: images/Return_curve.png  used on input line 340.
 (pdftex.def)             Requested size: 381.58824pt x 141.26456pt.
-<images/Greeks_attribution.png, id=229, 1010.3346pt x 718.3638pt>
+<images/Greeks_attribution.png, id=245, 1010.3346pt x 718.3638pt>
 File: images/Greeks_attribution.png Graphic file (type png)
 <use images/Greeks_attribution.png>
 Package pdftex.def Info: images/Greeks_attribution.png  used on input line 375.
 (pdftex.def)             Requested size: 337.86465pt x 240.2286pt.
- [8 <./images/Return_curve.png>] [9 <./images/Greeks_attribution.png>] [10] (main.bbl [11]) [12]
-<images/SPY_slippage.png, id=277, 878.53218pt x 325.215pt>
+ [8 <./images/Return_curve.png>] [9 <./images/Greeks_attribution.png>] [10] [11] (main.bbl [12]) [13]
+<images/SPY_slippage.png, id=298, 878.53218pt x 325.215pt>
 File: images/SPY_slippage.png Graphic file (type png)
 <use images/SPY_slippage.png>
-Package pdftex.def Info: images/SPY_slippage.png  used on input line 647.
+Package pdftex.def Info: images/SPY_slippage.png  used on input line 656.
 (pdftex.def)             Requested size: 357.73405pt x 132.42593pt.
- [13
+ [14
 
 ]
-<images/SPY_Unhedge.png, id=287, 879.285pt x 319.94531pt>
+<images/SPY_Unhedge.png, id=307, 879.285pt x 319.94531pt>
 File: images/SPY_Unhedge.png Graphic file (type png)
 <use images/SPY_Unhedge.png>
-Package pdftex.def Info: images/SPY_Unhedge.png  used on input line 659.
+Package pdftex.def Info: images/SPY_Unhedge.png  used on input line 668.
 (pdftex.def)             Requested size: 357.73405pt x 130.16785pt.
-<images/greeks_line_raw.png, id=289, 1261.8342pt x 2327.8167pt>
+<images/greeks_line_raw.png, id=309, 1261.8342pt x 2327.8167pt>
 File: images/greeks_line_raw.png Graphic file (type png)
 <use images/greeks_line_raw.png>
-Package pdftex.def Info: images/greeks_line_raw.png  used on input line 671.
+Package pdftex.def Info: images/greeks_line_raw.png  used on input line 680.
 (pdftex.def)             Requested size: 278.23827pt x 513.29341pt.
- [14 <./images/SPY_slippage.png> <./images/SPY_Unhedge.png>]
-<images/Greeks_line.png, id=300, 1073.2095pt x 1573.3179pt>
+ [15 <./images/SPY_slippage.png> <./images/SPY_Unhedge.png>]
+<images/Greeks_line.png, id=320, 1073.2095pt x 1573.3179pt>
 File: images/Greeks_line.png Graphic file (type png)
 <use images/Greeks_line.png>
-Package pdftex.def Info: images/Greeks_line.png  used on input line 683.
+Package pdftex.def Info: images/Greeks_line.png  used on input line 692.
 (pdftex.def)             Requested size: 278.23827pt x 407.90068pt.
- [15 <./images/greeks_line_raw.png>]
-<images/QQQ_return.png, id=309, 1078.9911pt x 858.5676pt>
+ [16 <./images/greeks_line_raw.png>]
+<images/QQQ_return.png, id=329, 1078.9911pt x 858.5676pt>
 File: images/QQQ_return.png Graphic file (type png)
 <use images/QQQ_return.png>
-Package pdftex.def Info: images/QQQ_return.png  used on input line 695.
+Package pdftex.def Info: images/QQQ_return.png  used on input line 704.
 (pdftex.def)             Requested size: 337.86465pt x 268.83884pt.
- [16 <./images/Greeks_line.png>]
-<images/QQQ_greeks.png, id=317, 1010.3346pt x 718.3638pt>
+ [17 <./images/Greeks_line.png>]
+<images/QQQ_greeks.png, id=337, 1010.3346pt x 718.3638pt>
 File: images/QQQ_greeks.png Graphic file (type png)
 <use images/QQQ_greeks.png>
-Package pdftex.def Info: images/QQQ_greeks.png  used on input line 702.
+Package pdftex.def Info: images/QQQ_greeks.png  used on input line 711.
 (pdftex.def)             Requested size: 298.11374pt x 211.95932pt.
-<images/DIA_return.png, id=320, 1078.9911pt x 858.5676pt>
+<images/DIA_return.png, id=340, 1078.9911pt x 858.5676pt>
 File: images/DIA_return.png Graphic file (type png)
 <use images/DIA_return.png>
-Package pdftex.def Info: images/DIA_return.png  used on input line 714.
+Package pdftex.def Info: images/DIA_return.png  used on input line 723.
 (pdftex.def)             Requested size: 337.86465pt x 268.83884pt.
- [17 <./images/QQQ_return.png> <./images/QQQ_greeks.png>]
-<images/DIA_greeks.png, id=329, 1008.1665pt x 718.3638pt>
+ [18 <./images/QQQ_return.png> <./images/QQQ_greeks.png>]
+<images/DIA_greeks.png, id=349, 1008.1665pt x 718.3638pt>
 File: images/DIA_greeks.png Graphic file (type png)
 <use images/DIA_greeks.png>
-Package pdftex.def Info: images/DIA_greeks.png  used on input line 721.
+Package pdftex.def Info: images/DIA_greeks.png  used on input line 730.
 (pdftex.def)             Requested size: 298.11374pt x 212.41971pt.
- [18 <./images/DIA_return.png> <./images/DIA_greeks.png>] (main.aux)
+ [19 <./images/DIA_return.png> <./images/DIA_greeks.png>] (main.aux)
  ***********
 LaTeX2e <2025-11-01>
 L3 programming layer <2025-12-24>
  ***********
-
-
-LaTeX Warning: Label(s) may have changed. Rerun to get cross-references right.
-
 Package rerunfilecheck Info: File `main.out' has not changed.
-(rerunfilecheck)             Checksum: 1EA61BF60866A71A77075F4657EBC8A0;5531.
+(rerunfilecheck)             Checksum: 8AFC4F023619F1B268C84C587BD04B53;6210.
  ) 
 Here is how much of TeX's memory you used:
- 13478 strings out of 467871
- 213443 string characters out of 5417892
- 712074 words of memory out of 5000000
- 41849 multiletter control sequences out of 15000+600000
- 672814 words of font info for 230 fonts, out of 8000000 for 9000
+ 13490 strings out of 467871
+ 213587 string characters out of 5417892
+ 712077 words of memory out of 5000000
+ 41853 multiletter control sequences out of 15000+600000
+ 672944 words of font info for 232 fonts, out of 8000000 for 9000
  1141 hyphenation exceptions out of 8191
- 75i,14n,79p,1579b,480s stack positions out of 10000i,1000n,20000p,200000b,200000s
+ 75i,14n,79p,1579b,574s stack positions out of 10000i,1000n,20000p,200000b,200000s
  <C:\Users\Lenovo\AppData\Local\MiKTeX\fonts/pk/ljfour/jknappen/ec/dpi525\ectt0800.pk> <C:\Users\Lenovo\AppData\Local\MiKTeX\fonts/pk/ljfour/jknappen/ec/dpi600\ectt0800.pk> <C:\Users\Lenovo\AppData\Local\MiKTeX\fonts/pk/ljfour/jknappen/ec/dpi600\ectt0900.pk> <C:\Users\Lenovo\AppData\Local\MiKTeX\fonts/pk/ljfour/jknappen/ec/dpi600\ectt1000.pk><C:/Users/Lenovo/AppData/Local/Programs/MiKTeX/fonts/type1/public/amsfonts/cm/cmex10.pfb><C:/Users/Lenovo/AppData/Local/Programs/MiKTeX/fonts/type1/public/amsfonts/cmextra/cmex9.pfb><C:/Users/Lenovo/AppData/Local/Programs/MiKTeX/fonts/type1/public/amsfonts/cm/cmmi10.pfb><C:/Users/Lenovo/AppData/Local/Programs/MiKTeX/fonts/type1/public/amsfonts/cm/cmmi6.pfb><C:/Users/Lenovo/AppData/Local/Programs/MiKTeX/fonts/type1/public/amsfonts/cm/cmmi7.pfb><C:/Users/Lenovo/AppData/Local/Programs/MiKTeX/fonts/type1/public/amsfonts/cm/cmmi9.pfb><C:/Users/Lenovo/AppData/Local/Programs/MiKTeX/fonts/type1/public/amsfonts/cm/cmr10.pfb><C:/Users/Lenovo/AppData/Local/Programs/MiKTeX/fonts/type1/public/amsfonts/cm/cmr6.pfb><C:/Users/Lenovo/AppData/Local/Programs/MiKTeX/fonts/type1/public/amsfonts/cm/cmr7.pfb><C:/Users/Lenovo/AppData/Local/Programs/MiKTeX/fonts/type1/public/amsfonts/cm/cmr9.pfb><C:/Users/Lenovo/AppData/Local/Programs/MiKTeX/fonts/type1/public/amsfonts/cm/cmsy10.pfb><C:/Users/Lenovo/AppData/Local/Programs/MiKTeX/fonts/type1/public/amsfonts/cm/cmsy7.pfb><C:/Users/Lenovo/AppData/Local/Programs/MiKTeX/fonts/type1/public/amsfonts/cm/cmsy9.pfb><C:/Users/Lenovo/AppData/Local/Programs/MiKTeX/fonts/type1/urw/times/utmb8a.pfb><C:/Users/Lenovo/AppData/Local/Programs/MiKTeX/fonts/type1/urw/times/utmr8a.pfb><C:/Users/Lenovo/AppData/Local/Programs/MiKTeX/fonts/type1/urw/times/utmri8a.pfb>
-Output written on main.pdf (18 pages, 3023247 bytes).
+Output written on main.pdf (19 pages, 3028656 bytes).
 PDF statistics:
- 527 PDF objects out of 1000 (max. 8388607)
- 86 named destinations out of 1000 (max. 500000)
- 44388 words of extra memory for PDF output out of 51595 (max. 10000000)
+ 549 PDF objects out of 1000 (max. 8388607)
+ 91 named destinations out of 1000 (max. 500000)
+ 44420 words of extra memory for PDF output out of 51595 (max. 10000000)
 

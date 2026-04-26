@@ -513,8 +513,17 @@ A further limitation is theta decay. As remaining time to maturity becomes short
 In principle, many of these issues could be mitigated by rolling the option position more frequently rather than only once per month. More frequent rolling would keep the traded contracts closer to at the money and could make the volatility signal, gamma exposure, and time-to-maturity profile more consistent over time.
 
 
+\section{Conclusion}
+This report has evaluated the efficacy of volatility-based quant strategies using delta-hedged ATM straddles across major U.S. ETFs and individual equities. Through a systematic backtesting framework, we examined four distinct signal specifications—ranging from historical realized volatility to advanced asymmetric GJR-GARCH models—to identify the most robust approach for capturing the Volatility Risk Premium (VRP).
 
+\subsection{Key Empirical Findings}
+The empirical results demonstrate that the Long-horizon RV signal is the most consistent performer in a frictionless environment. By anchoring the trade signal to a 60-day historical mean, the strategy successfully identifies periods where implied volatility significantly deviates from its long-term realized average. The Greeks-based PnL attribution confirms that the strategy's alpha is primarily driven by the Vega component, validating that the returns are indeed a result of volatility mispricing rather than unintended directional exposure. Furthermore, the delta-hedging overlay successfully neutralized first-order market risks, though the residual PnL highlights the inherent challenges of discrete rebalancing and higher-order sensitivities like Vanna and Volga.
 
+\subsection{The Constraint of Implementation Shortfall}
+The most critical finding, however, is the strategy\'s extreme sensitivity to execution frictions. While the SPY and QQQ backtests show statistically significant returns in a theoretical setting, the introduction of a modest 0.1\% slippage assumption renders the strategy unprofitable. This suggests that for low-frequency ATM straddle trading, the bid-ask spread and market impact are not merely secondary considerations but are "first-order" determinants of viability. The unhedged-straddle experiment further underscored this trade-off: while removing the hedge amplifies nominal returns, it introduces uncompensated idiosyncratic risk and drawdowns that would likely exceed the risk mandates of most institutional portfolios.
+
+\subsection{Future Outlook}
+In conclusion, while a robust volatility edge exists, its capture requires sophisticated execution and likely a higher-frequency hedging regime to minimize the Gamma-Theta leakage identified in the attribution analysis. Future research could explore dynamic slippage models or the integration of order-book imbalance signals to optimize entry and exit timing, potentially preserving the alpha that currently remains susceptible to transactional friction. As the market for volatility becomes increasingly efficient, the success of such strategies will depend less on the signal itself and more on the technical precision of its implementation.
 
 \small
 \bibliographystyle{unsrtnat}
