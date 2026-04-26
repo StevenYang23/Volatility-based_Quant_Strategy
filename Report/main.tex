@@ -1,9 +1,9 @@
-﻿\documentclass[11pt]{article}
+﻿\documentclass{article}
 
 \usepackage[T1]{fontenc}
+\PassOptionsToPackage{numbers,sort&compress}{natbib}
 \usepackage[utf8]{inputenc}
-\usepackage{lmodern}
-\usepackage[margin=1in]{geometry}
+\usepackage[final,main]{neurips_2026}
 \usepackage{indentfirst}
 \usepackage{microtype}
 \usepackage{booktabs}
@@ -14,8 +14,9 @@
 \usepackage{longtable}
 \usepackage{graphicx}
 \usepackage{float}
-\usepackage[numbers,sort&compress]{natbib}
 \usepackage{hyperref}
+\newcolumntype{Y}{>{\raggedright\arraybackslash}X}
+\raggedbottom
 
 \hypersetup{
   colorlinks=true,
@@ -26,30 +27,6 @@
 }
 
 \title{Volatility Trading with Delta-Hedged ATM Straddles}
-
-\makeatletter
-\def\@maketitle{%
-  \newpage
-  \null
-  \vspace*{0.75in}%
-  \vskip 2em%
-  \begin{center}%
-    \let\footnote\thanks
-    \rule{\textwidth}{4pt}\par
-    \vspace{0.25in}%
-    {\fontsize{17}{20}\selectfont\bfseries\@title\par}%
-    \vspace{0.25in}%
-    \rule{\textwidth}{1pt}\par
-    \vskip 2.5em%
-    {\large
-      \lineskip .5em%
-      \begin{tabular}[t]{c}%
-        \@author
-      \end{tabular}\par}%
-  \end{center}%
-  \vskip 1.5em
-}
-\makeatother
 
 \date{}
 
@@ -66,7 +43,7 @@
 \maketitle
 
 \begin{abstract}
-Abstract to be completed in the final version.
+This report studies a low-frequency volatility-trading strategy implemented through one-month at-the-money (ATM) straddles on U.S. exchange-traded funds and individual equities. The core signal compares option-implied volatility with alternative benchmarks for realized or expected volatility, while a delta-hedging overlay is used to reduce first-order directional exposure and make the resulting profit and loss (PnL) more interpretable as volatility-related performance. The empirical analysis evaluates four signal specifications, reports return and drawdown statistics, and decomposes strategy PnL using a Greeks-based attribution framework. In the frictionless backtest, several strategies appear economically attractive, with the long-horizon realized-volatility signal emerging as the most robust across assets. However, performance is highly sensitive to implementation assumptions. Once a 0.1\% slippage assumption is introduced, the SPY strategies become unprofitable, indicating that execution frictions are a first-order concern. An additional unhedged-straddle experiment shows that removing the hedge can produce very large headline returns, but only at the cost of extreme volatility, deep drawdowns, substantial margin requirements, and large directional risk. Overall, the results suggest that the strategy is useful as a framework for studying volatility signals, but difficult to implement in practice without materially better execution and risk control.
 \end{abstract}
 
 \clearpage
@@ -74,11 +51,11 @@ Abstract to be completed in the final version.
 \section{Introduction}
 \label{sec:intro}
 
-This report studies a low-frequency volatility trading strategy implemented through one-month at-the-money (ATM) straddles on U.S. equities and exchange-traded funds. The core idea is simple: options embed the market's forward-looking assessment of risk through implied volatility, while the underlying asset reveals realized volatility only after price moves occur. A persistent gap between the two creates a natural trading signal. When implied volatility appears rich relative to an appropriate benchmark, the strategy sells volatility through a short straddle; when implied volatility appears cheap, it buys volatility through a long straddle.
+This report examines a low-frequency volatility-trading strategy implemented on U.S. equities and exchange-traded funds. Volatility trading matters because uncertainty is itself priced in financial markets. Investors care not only about expected returns, but also about the dispersion and timing of future price movements, especially when portfolios are exposed to crash risk, hedging demand, or large mark-to-market losses. Options therefore allow future uncertainty to be traded more directly than the underlying asset alone.
 
-The key challenge is that an option position is not a pure volatility bet. A straddle carries directional sensitivity, convexity, time decay, and sensitivity to changes in interest rates and implied volatility itself. For that reason, the strategy overlays delta hedging in the underlying and evaluates performance through a daily Greeks-based attribution. The objective is not merely to report returns, but to show whether profits arise from the intended volatility exposure rather than from incidental equity direction.
+At a broad level, volatility trading is profitable when the price paid for future uncertainty differs from the uncertainty that is eventually realized. If option-implied volatility is too high relative to subsequent realized volatility, selling volatility can be profitable because the market has overcharged for protection or convexity. If option-implied volatility is too low relative to subsequent realized volatility, buying volatility can be profitable because the option market has underpriced future movement. More generally, profit opportunities can arise when implied volatility differs from a suitable benchmark for expected volatility, when investors are willing to pay a premium for downside insurance, or when compensation for tail risk and skewness is embedded in option prices \cite{wu2009,bakas2018}.
 
-The intended audience is assumed to be familiar with stocks, returns, and standard backtesting ideas, but not necessarily with option trading. The discussion therefore introduces the economic intuition of a straddle, explains the role of implied volatility and Greeks, and then presents the trading rules and empirical results in a self-contained way.
+These ideas motivate the empirical design of the report. The methodology section translates them into an implementable strategy by defining volatility signals based on the gap between implied volatility and alternative realized- or forecast-volatility benchmarks. The intended audience is assumed to be familiar with stocks, returns, and standard backtesting concepts, but not necessarily with options. The discussion therefore first introduces the economic intuition of options, implied volatility, and the Greeks before presenting the trading rules and empirical evidence in a self-contained way.
 
 \section{Options Preliminaries}
 \label{sec:pricing}
@@ -110,7 +87,7 @@ so the position benefits from sufficiently large moves in either direction. This
     \centering
     \includegraphics[width=\linewidth]{images/pnl_put.png}
   \end{minipage}
-  \caption{Illustrative maturity P\&L of a long call and a long put.}
+  \caption{Illustrative maturity PnL of a long call and a long put.}
   \label{fig:call-put-pnl}
 \end{figure}
 
@@ -124,13 +101,13 @@ so the position benefits from sufficiently large moves in either direction. This
     \centering
     \includegraphics[width=\linewidth]{images/pnl_short_straddle.png}
   \end{minipage}
-  \caption{Illustrative maturity P\&L of long and short ATM straddles.}
+  \caption{Illustrative maturity PnL of long and short ATM straddles.}
   \label{fig:straddle-pnl}
 \end{figure}
 
 \subsection{Black--Scholes model}
 
-This report uses the Black--Scholes model as the starting point for option valuation. The model provides a tractable mapping between an option's value and the key state variables that drive it: the underlying price, strike, time to maturity, risk-free rate, and volatility. Although listed equity options are American-style in legal form, Black--Scholes remains a standard and useful approximation for short-dated liquid contracts, especially when the main objective is to infer implied volatility and measure risk exposures consistently.
+The Black--Scholes model is used as the starting point for option valuation. It provides a tractable mapping between an option's value and the key state variables that drive it: the underlying price, strike, time to maturity, risk-free rate, and volatility. Although listed equity options are American-style in legal form, Black--Scholes remains a standard and useful approximation for short-dated liquid contracts, especially when the main objective is to infer implied volatility and measure risk exposures consistently.
 
 For a European call and put with time to maturity $\tau=T-t$, risk-free rate $r$, and volatility $\sigma$, prices are
 \[
@@ -163,7 +140,7 @@ The value of an option depends on the underlying price, implied volatility, time
 
 For the present strategy, the most important interpretations are straightforward. Delta measures first-order directional exposure to the underlying. Gamma captures convexity in the underlying price. Vega measures sensitivity to changes in implied volatility. Theta represents time decay. Vanna and volga become relevant when the underlying and implied volatility move jointly or when volatility changes materially.
 
-A second-order expansion of option value over a short interval provides the basic P\&L map:
+A second-order expansion of option value over a short interval provides the basic PnL map:
 \[
 \mathrm{d}V \approx
 \Delta\,\mathrm{d}S
@@ -175,42 +152,38 @@ A second-order expansion of option value over a short interval provides the basi
 +\frac{1}{2}\text{Volga}\,(\mathrm{d}\sigma)^2
 +\varepsilon,
 \]
-where $\varepsilon$ captures higher-order terms. This decomposition follows the standard treatment of option risk attribution in \citet{bossu2014}. It is useful later when interpreting whether a delta-hedged straddle is actually earning volatility-related P\&L.
+where $\varepsilon$ captures higher-order terms. This decomposition follows the standard treatment of option risk attribution in \cite{bossu2014}. It is useful later when interpreting whether a delta-hedged straddle is actually earning volatility-related PnL.
 
 \subsection{Implied volatility}
 
-Implied volatility is the value of $\sigma$ that makes the Black--Scholes price match the observed market price of an option or option package. In that sense, implied volatility is not directly observed; it is backed out from price. Practitioners often quote options in implied-volatility terms because volatility provides a standardized way to compare option richness across time and across contracts.
+Implied volatility is the value of $\sigma$ that makes the Black--Scholes price match the observed market price of an option or option package. In that sense, implied volatility is not directly observed; it is inferred from price. Practitioners often quote options in implied-volatility terms because volatility provides a standardized way to compare option richness across time and across contracts.
 
 This interpretation is central to the strategy studied in this report. The trading decision is not driven by a view on whether the stock will rise or fall. Instead, it is driven by whether the option market appears to be charging too much or too little for future uncertainty relative to a benchmark for expected or normal volatility.
 
 \section{Methodology}
 \label{sec:methodology}
 
-\subsection{Data}
+\subsection{Capturing volatility mispricing}
 
-The empirical sample consists of three exchange-traded funds, namely SPY, QQQ, and DIA, together with a set of individual U.S. equities: AAPL, ACMR, AMD, GOOG, INTC, META, and TSLA. These assets provide a useful mix of broad market exposure and single-name volatility, allowing the strategy to be examined across instruments with different liquidity conditions, sector compositions, and event risk. The individual stocks are not selected through a formal screening rule; rather, they are chosen largely at random from names with which I am personally familiar, so the single-stock sample should be interpreted as illustrative rather than exhaustive.
+The central implementation question is how to convert a view on volatility into a tradeable position. The basic idea is to compare the option market's price of future uncertainty, summarized by implied volatility, with a benchmark for the volatility expected to materialize. When implied volatility is meaningfully above that benchmark, volatility can be viewed as expensive and the natural trade is to sell volatility. When implied volatility is meaningfully below that benchmark, volatility can be viewed as cheap and the natural trade is to buy volatility. In this sense, the strategy seeks to capture volatility mispricing by trading the gap between implied volatility and realized- or forecast-volatility measures.
 
-Although the strategy is implemented on all of these symbols, this report focuses primarily on the performance of SPY. The reason is practical as well as economic: SPY is the most popular and most liquid ETF in the sample, its options market is particularly deep, and its prices are therefore less affected by idiosyncratic microstructure noise than those of many single stocks. For that reason, SPY provides the cleanest setting for evaluating whether the strategy behaves as intended.
+A straddle is a natural instrument for this purpose because its payoff depends primarily on the magnitude of price movement rather than its direction. A long straddle benefits from high volatility because sufficiently large realized moves increase the value of the embedded convexity. By contrast, a short straddle benefits from low volatility because the option seller receives premium upfront and profits when realized price movement remains limited relative to what the option market had priced in. This also explains why the absolute level of implied volatility matters. Even if an investor expects volatility to be elevated, a long straddle may still be unattractive when implied volatility is already very high, because the option premium may already embed that expectation and leave too little room for additional profit.
 
-For each symbol and each month, the strategy selects an at-the-money straddle associated with the next monthly expiry. The strike is fixed at entry and the position is monitored through the month. As the underlying moves, the contract drifts away from exact at-the-money status; this is a deliberate simplification consistent with a low-frequency monthly trading design.
+However, simply buying or selling a straddle does not isolate a pure volatility exposure. The position still carries delta, so part of its profit and loss may come from directional movement in the underlying. To make the trade more interpretable as a volatility position, the strategy uses delta hedging. Operationally, this means trading the underlying stock against the straddle so that net portfolio delta remains close to zero. The goal is to reduce first-order directional exposure and allow realized profit and loss to depend more cleanly on convexity, time decay, and changes in implied volatility.
 
-\subsubsection{Data construction details}
-
-Each daily observation combines the underlying close, cash dividends, a short-dated risk-free rate, and the closing prices of the selected call and put. From these inputs, the dataset computes realized volatility, leg-level implied volatilities, a single straddle implied volatility that matches the observed straddle price, and the standard Greeks for both individual legs and the straddle as a whole. All volatility measures are annualized using a 252-trading-day convention.
-
-Positions are delta hedged using the underlying. If the absolute net delta of the portfolio exceeds the re-hedging threshold, the stock hedge is adjusted and hedge shares are rounded to integers. This overlay does not remove all directional risk, but it reduces first-order exposure and makes the strategy more interpretable as a volatility trade rather than a disguised directional position.
+In practice, repeated delta hedging is closely related to gamma scalping. A long-gamma position that is rebalanced toward delta neutrality tends to buy the underlying after price declines and sell after price increases. If realized price fluctuations are sufficiently large, this rebalancing process can monetize convexity gains and offset part of the theta paid to hold the options \cite{wilmott2006}. Conversely, if realized volatility remains too low, theta decay dominates and the long-volatility position loses money. This gamma-scalping interpretation matters because it clarifies that delta hedging is not merely a risk-control overlay; it is also part of the mechanism through which a volatility position converts realized market movement into profit and loss.
 
 \subsection{Trading signal}
 
-All four agents share the same execution layer. A long-volatility position corresponds to buying one straddle, while a short-volatility position corresponds to selling one straddle when shorting is allowed. Positions are closed when the signal reverts toward its neutral region, and the hedge is updated whenever the net delta drifts beyond the chosen threshold.
+All four signal specifications share the same execution layer. The core mapping from signal to trade direction is simple. When implied volatility is high relative to the benchmark, the straddle is treated as expensive, so the strategy takes a short-volatility position by selling the straddle. When implied volatility is low relative to the benchmark, the straddle is treated as cheap, so the strategy takes a long-volatility position by buying the straddle. Positions are closed when the signal reverts toward its neutral region, and the hedge is updated whenever the portfolio's net delta drifts beyond the rebalancing threshold.
 
 \subsubsection{Realized volatility benchmark}
 
-The classic benchmark in volatility trading is the volatility risk premium,
+The classic benchmark in volatility trading is the volatility risk premium (VRP) \cite{wu2009},
 \[
 \mathrm{VRP}_t=\mathrm{IV}_t-\mathrm{RV}_t.
 \]
-Here, $\mathrm{IV}_t$ denotes the implied volatility of the traded straddle and $\mathrm{RV}_t$ denotes realized volatility estimated from recent underlying returns. The intuition is direct: if implied volatility is high relative to realized volatility, the option market may be overpricing future uncertainty; if implied volatility is low relative to realized volatility, options may be relatively cheap.
+Here, $\mathrm{IV}_t$ denotes the implied volatility of the traded straddle and $\mathrm{RV}_t$ denotes realized volatility estimated from recent underlying returns. This spread is widely used to capture the variance risk premium embedded in option prices. At the same time, the measured spread need not reflect pure volatility mispricing alone: part of it may also compensate investors for higher-order risks such as downside asymmetry and jump-related skewness, especially for individual equities with more pronounced tail risk \cite{bakas2018}. The intuition is direct: if implied volatility is high relative to realized volatility, the option market may be overpricing future uncertainty; if implied volatility is low relative to realized volatility, options may be relatively cheap.
 
 Realized volatility is computed from a rolling 20-day window of daily log returns. If $r_t=\ln(S_t/S_{t-1})$, then
 \[
@@ -218,7 +191,7 @@ Realized volatility is computed from a rolling 20-day window of daily log return
 \]
 where $\bar r_t$ is the mean return over the same window.
 
-This specification is the most familiar and transparent benchmark in the report, because it compares option-implied uncertainty with the variability recently observed in the underlying market.
+This specification is the most familiar and transparent benchmark in the report because it compares option-implied uncertainty with the variability recently observed in the underlying market.
 
 \begin{figure}[H]
   \centering
@@ -229,26 +202,25 @@ This specification is the most familiar and transparent benchmark in the report,
 
 \subsubsection{GARCH-based benchmark}
 
-The second benchmark addresses an important mismatch in a plain VRP comparison. Implied volatility reflects the market's expectation of volatility from today to option expiry, while realized volatility is computed from historical returns and does not guarantee persistence into the future. In other words, VRP compares a backward-looking statistic with a forward-looking market expectation.
+The second benchmark addresses an important mismatch in a plain VRP comparison. Implied volatility reflects the market's expectation of volatility from the current date to option expiry, whereas realized volatility is computed from historical returns and need not persist into the future. In other words, the standard VRP compares a backward-looking statistic with a forward-looking market expectation.
 
-To make the comparison more consistent in horizon, this benchmark replaces backward-looking realized volatility with a model-based forecast from a GJR-GARCH(1,1) specification with Student-$t$ innovations. This choice allows for volatility clustering and asymmetric responses to negative returns, both of which are common in equity data. The model is estimated on a trailing window, refit periodically, and projected forward over the remaining trading days to the option expiry.
+To make the comparison more consistent in horizon, this benchmark replaces backward-looking realized volatility with a model-based forecast from a GJR-GARCH(1,1) specification with Student-$t$ innovations. This choice allows for volatility clustering and asymmetric responses to negative returns, both of which are common in equity data \cite{glosten1993}. The model is estimated on a trailing window, refit periodically, and projected forward over the remaining trading days to the option expiry.
 
 The corresponding spread is
 \[
 \mathrm{IV}_t-\widehat{\mathrm{RV}}^{\mathrm{GARCH}}_t.
 \]
-This benchmark is designed to compare current option-implied volatility with a forward-looking conditional volatility estimate rather than with a purely historical measure.
-Operationally, the signal asks whether market-implied future volatility is aligned with model-predicted future volatility.
+This benchmark compares current option-implied volatility with a forward-looking conditional volatility estimate rather than with a purely historical measure. Operationally, the signal asks whether market-implied future volatility is aligned with model-predicted future volatility.
 
 \subsubsection{Long-horizon realized-volatility benchmark}
 
-A third benchmark compares current straddle implied volatility with a slow-moving historical average of realized volatility. Specifically, it uses the mean of the prior 60 observations of daily realized volatility as a long-horizon anchor. The corresponding spread is therefore
+A third benchmark compares current straddle implied volatility with a slow-moving historical average of realized volatility. Specifically, it uses the mean of the prior 60 observations of daily realized volatility as a long-horizon anchor. This choice is motivated by the well-known persistence of volatility together with its tendency to revert toward more normal levels over time, as discussed by Engle and Patton \cite{englepatton2001}. The corresponding spread is therefore
 \[
 \mathrm{IV}_t-\overline{\mathrm{RV}}^{\mathrm{long}}_t,
 \]
 where $\overline{\mathrm{RV}}^{\mathrm{long}}_t$ is computed from past values only.
 
-The economic logic is a convergence chain. Near expiry, option-implied volatility should converge to instantaneous realized volatility. A second empirical observation is that realized volatility itself tends to mean-revert. Combining these ideas gives a practical hierarchy: IV converges to RV, and RV converges to its long-horizon mean; therefore IV is expected to gravitate toward long-horizon RV as expiry approaches.
+The economic logic is a sequence of convergence arguments. As expiry approaches, option-implied volatility should converge toward realized volatility. A second empirical regularity is that realized volatility itself often mean-reverts \cite{marshall2009,englepatton2001}. Combining these ideas yields a practical hierarchy: implied volatility converges toward realized volatility, and realized volatility converges toward its longer-run mean. Under this view, implied volatility should also tend to gravitate toward long-horizon realized volatility as expiry approaches.
 
 This benchmark differs conceptually from the first two. It does not compare implied volatility with the most recent realized-volatility estimate or with a model-based forecast for option expiry. Instead, it compares implied volatility with a slow-moving historical level that realized volatility itself tends to revisit over time.
 
@@ -262,14 +234,14 @@ where $X_t$ denotes the spread of interest and $\mu_{t,20}(X)$ and $\sigma_{t,20
 
 \subsubsection{Signal summary}
 
-The implementation includes four agents built on these benchmarks. The hard-threshold rule and percentile rule both use the classic VRP idea, but they differ in how entry thresholds are defined. The GARCH-based rule replaces realized volatility with a conditional forecast. The long-horizon rule compares current implied volatility with a slow-moving historical mean of realized volatility.
+The implementation includes four signal rules built on these benchmarks. The hard-threshold rule and the percentile rule both use the classic VRP idea, but they differ in how entry thresholds are defined. The GARCH-based rule replaces realized volatility with a conditional forecast, whereas the long-horizon rule compares current implied volatility with a slow-moving historical mean of realized volatility.
 
 \begin{table}[H]
 \centering
 \small
 \caption{Summary of trading rules.}
 \label{tab:signals}
-\begin{tabularx}{\textwidth}{@{}p{0.19\textwidth}X X p{0.16\textwidth}@{}}
+\begin{tabularx}{\textwidth}{@{}>{\raggedright\arraybackslash}p{0.19\textwidth}Y Y >{\raggedright\arraybackslash}p{0.16\textwidth}@{}}
 \toprule
 Agent & Long-volatility entry & Short-volatility entry & Exit rule \\
 \midrule
@@ -288,7 +260,7 @@ The reported implementation uses the parameter settings summarized below.
 \small
 \caption{Shared execution parameters.}
 \label{tab:shared-params}
-\begin{tabularx}{\textwidth}{@{}p{0.28\textwidth}X p{0.16\textwidth}@{}}
+\begin{tabularx}{\textwidth}{@{}>{\raggedright\arraybackslash}p{0.28\textwidth}Y >{\raggedright\arraybackslash}p{0.16\textwidth}@{}}
 \toprule
 Parameter & Description & Value \\
 \midrule
@@ -304,7 +276,7 @@ Parameter & Description & Value \\
 \small
 \caption{Agent-specific signal parameters.}
 \label{tab:agent-params}
-\begin{tabularx}{\textwidth}{@{}p{0.28\textwidth}X p{0.16\textwidth}@{}}
+\begin{tabularx}{\textwidth}{@{}>{\raggedright\arraybackslash}p{0.28\textwidth}Y >{\raggedright\arraybackslash}p{0.16\textwidth}@{}}
 \toprule
 Agent & Parameter & Value \\
 \midrule
@@ -317,7 +289,23 @@ Long-horizon IV spread & Long-term RV window & 60 \\
 \end{tabularx}
 \end{table}
 
-All parameters are fixed before the backtest is run. They are not fitted, trained, or optimized on the in-sample period, and the same group of parameter values is applied to every underlying in the sample. This design choice is intended to limit overfitting and make the cross-asset comparison more meaningful.
+All parameters are fixed before the backtest is run. They are not fitted, trained, or optimized in sample, and the same parameter set is applied to every underlying in the sample. This design limits overfitting and makes the cross-asset comparison more meaningful.
+
+\section{Data}
+\label{sec:data}
+
+The empirical sample consists of three exchange-traded funds---SPY, QQQ, and DIA---together with a set of individual U.S. equities: AAPL, ACMR, AMD, GOOG, INTC, META, and TSLA. These assets provide a useful mix of broad market exposure and single-name volatility, allowing the strategy to be examined across instruments with different liquidity conditions, sector compositions, and event risk. The individual stocks are not selected through a formal screening rule; rather, they form an illustrative sample of liquid and well-known names rather than a comprehensive cross-section of U.S. equities.
+
+Although the strategy is implemented on all of these symbols, the report focuses primarily on SPY. The reason is both practical and economic: SPY is the most liquid ETF in the sample, its options market is especially deep, and its prices are therefore less affected by idiosyncratic microstructure noise than those of many single stocks. SPY thus provides the cleanest setting in which to evaluate whether the strategy behaves as intended.
+
+For each symbol and each month, the strategy selects an at-the-money straddle associated with the next monthly expiry. The strike is fixed at entry and the position is monitored through the month. As the underlying moves, the contract drifts away from exact at-the-money status; this is a deliberate simplification consistent with a low-frequency monthly trading design.
+
+\subsection{Data construction details}
+
+Each daily observation combines the underlying close, cash dividends, a short-dated risk-free rate, and the closing prices of the selected call and put. From these inputs, the dataset computes realized volatility, leg-level implied volatilities, a straddle implied volatility that matches the observed straddle price, and the standard Greeks for both the individual legs and the straddle as a whole. All volatility measures are annualized using a 252-trading-day convention.
+
+Positions are delta hedged using the underlying. If the absolute net delta of the portfolio exceeds the re-hedging threshold, the stock hedge is adjusted and hedge shares are rounded to integers. This overlay does not eliminate all directional risk, but it reduces first-order exposure and makes the strategy easier to interpret as a volatility trade rather than as a disguised directional position.
+
 
 \section{Results}
 \label{sec:results}
@@ -342,9 +330,10 @@ Agent & Win Rate & Sharpe & Sortino & Ann. Return & Ann. Vol. & Max DD & Calmar 
 \end{tabular}%
 }
 \end{table}
-Table~\ref{tab:spy-return-summary} summarizes risk-adjusted performance. \texttt{Agent\_hardThreshold} delivers the strongest Sharpe ratio (1.3248) and Calmar ratio (2.3339). \texttt{Agent\_Perc} is close in both return and risk metrics. \texttt{Agent\_LongTerm} achieves high annual return (25.56\%) with higher volatility (21.44\%), while \texttt{Agent\_Garch} remains profitable but with lower risk-adjusted efficiency in this run.
+Table~\ref{tab:spy-return-summary} summarizes the frictionless backtest and shows strong headline performance across all four agents. However, these results assume zero execution costs and should therefore be interpreted as an upper bound on implementable performance.
 
-Figure~\ref{fig:return-curve} reports cumulative value-ratio paths (top panel) and daily return series (bottom panel) for SPY and the four strategy agents under the updated parameter set. All four agents outperform the underlying over the sample, with final value ratios clustered around 1.45--1.57 versus roughly 1.30 for SPY.
+
+Figure~\ref{fig:return-curve} reports cumulative value-ratio paths (top panel) and daily return series (bottom panel) for the frictionless SPY backtest. These paths appear attractive in isolation, but the comparison with Table~\ref{tab:spy-slippage-summary} shows that the apparent edge is not robust once realistic execution frictions are introduced.
 
 \begin{figure}[H]
   \centering
@@ -355,9 +344,9 @@ Figure~\ref{fig:return-curve} reports cumulative value-ratio paths (top panel) a
 
 
 
-\subsubsection{P\&L attribution}
+\subsubsection{PnL attribution}
 
-Daily P\&L is decomposed via a second-order Greek expansion:
+Daily PnL is decomposed via a second-order Greek expansion:
 \[
 \mathrm{d}V \approx
 \underbrace{\Delta\,\mathrm{d}S}_{\text{Delta}}
@@ -369,7 +358,7 @@ Daily P\&L is decomposed via a second-order Greek expansion:
 +\underbrace{\frac{1}{2}\text{Volga}\,(\mathrm{d}\sigma)^2}_{\text{Volga}}
 +\varepsilon.
 \]
-The P\&L from delta re-hedging trades is merged into the Gamma term, so the Gamma attribution captures both the convexity gain and the realized cost or benefit of maintaining the hedge.
+PnL from delta re-hedging trades is merged into the Gamma term, so the Gamma attribution captures both the convexity gain and the realized cost or benefit of maintaining the hedge.
 
 For each Greek component $i$, the reported percentage contribution is computed as
 \[
@@ -379,7 +368,7 @@ For each Greek component $i$, the reported percentage contribution is computed a
 \times 100.
 \]
 
-Figure~\ref{fig:greeks-attribution} shows the summed attribution breakdown for each agent. Vega is the dominant P\&L source across all strategies, confirming that returns are primarily driven by volatility mispricing rather than directional exposure. Notably, \texttt{Agent\_LongTerm} records the highest vega attribution (58.2\%), indicating that the long-horizon realized-volatility signal is the most effective at capturing volatility mispricing and benefiting from implied volatility mean-reversion.
+Figure~\ref{fig:greeks-attribution} shows the summed attribution breakdown for each agent. Vega is the dominant PnL source across all strategies, confirming that returns are driven primarily by volatility exposure rather than by directional market moves. Notably, \texttt{Agent\_LongTerm} records the highest vega attribution (58.2\%), indicating that the long-horizon realized-volatility signal is particularly effective at capturing volatility mispricing and subsequent implied-volatility mean reversion.
 
 \begin{figure}[H]
   \centering
@@ -390,7 +379,7 @@ Figure~\ref{fig:greeks-attribution} shows the summed attribution breakdown for e
 
 \subsection{Performance on other ETFs}
 
-Table~\ref{tab:etf-return-summary} reports performance statistics for QQQ and DIA under the same parameter set used in the SPY section. DIA is stronger on a risk-adjusted basis across agents (higher Sharpe and Sortino), while QQQ remains profitable but with larger drawdowns and more dispersion across agents.
+Table~\ref{tab:etf-return-summary} reports performance statistics for QQQ and DIA under the same parameter set used in the SPY analysis. DIA is generally stronger on a risk-adjusted basis across agents, with higher Sharpe and Sortino ratios, whereas QQQ remains profitable but exhibits larger drawdowns and greater dispersion across specifications.
 
 \begin{table}[H]
 \centering
@@ -416,7 +405,7 @@ DIA & \texttt{Agent\_LongTerm}      & 85.71\% & 2.0476 & 1.7590 & 81.61\% & \und
 }
 \end{table}
 
-Table~\ref{tab:etf-greeks-attribution} reports summed Greek attribution percentages. Across QQQ and DIA, Vega is the largest positive contributor in every agent, consistent with a volatility-risk-premium strategy. The strongest Vega attribution appears in \texttt{Agent\_LongTerm} for both ETFs (QQQ: +57.72\%, DIA: +66.42\%), indicating that this signal captures volatility-premium exposure most directly in the ETF sample. Residual attribution is generally negative, indicating that a non-trivial share of realized P\&L is outside the low-order Greek decomposition.
+Table~\ref{tab:etf-greeks-attribution} reports summed Greek attribution percentages. Across QQQ and DIA, Vega is the largest positive contributor for every agent, consistent with a volatility-risk-premium strategy. The strongest Vega attribution appears in \texttt{Agent\_LongTerm} for both ETFs (QQQ: +57.72\%, DIA: +66.42\%), indicating that this signal captures volatility-premium exposure most directly in the ETF sample. Residual attribution is generally negative, which suggests that a non-trivial share of realized PnL lies outside the low-order Greek decomposition.
 
 \begin{table}[H]
 \centering
@@ -445,41 +434,91 @@ DIA & \texttt{Agent\_LongTerm}      & -6.71\% & +1.86\%  & \underline{+66.42\%} 
 
 \subsection{Performance on single stocks}
 
-Single-stock results are more heterogeneous than ETF results, reflecting larger idiosyncratic risk and event sensitivity. In terms of risk-adjusted performance, outcomes differ substantially by ticker: for example, GOOG and INTC are strong across multiple agents, whereas AMD and parts of ACMR/META are weaker or unstable in this sample.
+Single-stock results are more heterogeneous than ETF results, reflecting larger idiosyncratic risk, event sensitivity, and firm-specific jumps. In risk-adjusted terms, outcomes differ substantially across tickers: GOOG and INTC are comparatively strong across multiple specifications, whereas AMD and parts of the ACMR and META results are weaker or less stable in this sample.
 
-From a Greeks-attribution perspective, Vega remains the dominant positive component in most ticker-agent combinations. The highest Vega attribution in the single-stock panel is \texttt{Agent\_Garch} on ACMR (+67.53\%), while \texttt{Agent\_LongTerm} also shows very high Vega share on INTC (+42.03\%) and TSLA (+41.71\%). This supports the same core interpretation as in ETFs: realized strategy P\&L is primarily tied to volatility exposure, with residual and cross-greek terms explaining the remainder.
+From a Greeks-attribution perspective, Vega remains the dominant positive component in most ticker-agent combinations. The highest Vega attribution in the single-stock panel is \texttt{Agent\_Garch} on ACMR (+67.53\%), while \texttt{Agent\_LongTerm} also shows a high Vega share on INTC (+42.03\%) and TSLA (+41.71\%). This supports the same interpretation as in the ETF results: realized strategy PnL is primarily tied to volatility exposure, with residual and cross-Greek terms explaining the remainder.
 
 The full single-stock statistics and Greeks-attribution tables are reported in Appendix~\ref{app:single-stock-full-tables}.
 
 \subsection{Robustness}
-The cross-asset results indicate that the long-horizon realized-volatility spread is the most robust signal in this study. Using one fixed parameter set (without ticker-specific tuning), it delivers the most consistent risk-adjusted performance across SPY, QQQ, and DIA, with mixed but still competitive outcomes in several single stocks.
+The cross-asset results indicate that the long-horizon realized-volatility spread is the most robust signal in the study. Using a single fixed parameter set, without ticker-specific tuning, it delivers the most consistent risk-adjusted performance across SPY, QQQ, and DIA, while remaining mixed but still competitive in several single stocks.
 
-Greeks attribution is aligned with this conclusion: Vega is the dominant positive contributor in most cases, indicating that returns are primarily coming from volatility mispricing rather than directional beta.
+The Greeks-based attribution supports the same conclusion: vega is the dominant positive contributor in most cases, indicating that strategy returns are linked primarily to volatility exposure rather than to incidental directional beta.
 
-Robustness is stronger in ETFs than in single names, likely because ETFs have better liquidity and lower idiosyncratic jump risk. Main limitations are sample length, execution/transaction-cost assumptions, and residual terms outside the low-order Greeks decomposition.
+Robustness is stronger in ETFs than in single names, likely because ETFs benefit from better liquidity and lower idiosyncratic jump risk. The main limitations remain sample length, execution-cost assumptions, and residual components that lie outside the low-order Greek decomposition.
 
 
 
 \section{Discussion}
+\subsection{Execution Frictions}
+Slippage is a major practical challenge because executed prices may differ from quoted prices, directly reducing realized profits. The frictionless backtests should therefore be interpreted as signal-quality benchmarks rather than as directly tradable results. To assess this effect, the report also tests a 0.1\% slippage assumption.
+
+\begin{table}[H]
+\centering
+\footnotesize
+\caption{SPY performance summary after incorporating slippage.}
+\label{tab:spy-slippage-summary}
+\resizebox{\textwidth}{!}{%
+\begin{tabular}{lrrrrrrrr}
+\toprule
+Agent & Win Rate & Sharpe Ratio & Sortino Ratio & Annual Return & Annual Volatility & Max Drawdown & Calmar Ratio & Kelly's Criteria \\
+\midrule
+\texttt{Agent\_hardThreshold} & 65.00\% & -0.9852 & -1.0949 & -14.12\% & 15.45\% & -26.89\% & -0.5251 & -6.3770 \\
+\texttt{Agent\_Perc} & 64.10\% & -0.9934 & -1.1351 & -14.36\% & 15.60\% & -27.47\% & -0.5226 & -6.3667 \\
+\texttt{Agent\_Garch} & 65.96\% & -1.0275 & -1.0072 & -15.89\% & 16.84\% & -33.34\% & -0.4765 & -6.1023 \\
+\texttt{Agent\_LongTerm} & 65.22\% & -0.5136 & -0.6959 & -9.05\% & 18.46\% & -21.91\% & -0.4128 & -2.7823 \\
+\bottomrule
+\end{tabular}%
+}
+\end{table}
+
+This strategy requires frequent delta hedging and therefore repeated buying and selling of the underlying asset. Even small execution shortfalls accumulate quickly when hedge rebalancing is frequent. This logic is consistent with the broader evidence in \cite{amihud2002}, which shows that illiquidity and trading costs are economically important determinants of realized returns. Under the 0.1\% slippage assumption, the SPY results in Table~\ref{tab:spy-slippage-summary} deteriorate sharply: all four agents move from attractive frictionless performance to negative annual returns, negative Sharpe ratios, and materially worse drawdowns. The practical implication is clear: unless execution costs can be reduced substantially, the strategy is not economically viable. A visual summary is provided in Appendix~\ref{app:spy-slippage}.
+
+\subsection{Implementation Challenges}
+
+The trading signals themselves are straightforward to compute, but implementing the strategy in live markets is considerably more demanding.
+
+As discussed above, maintaining a frequently rebalanced delta hedge is costly and operationally demanding, especially for individual investors. To illustrate the trade-off, the report also evaluates a pure unhedged straddle strategy on SPY.
+
+\begin{table}[H]
+\centering
+\footnotesize
+\caption{SPY performance summary for the unhedged straddle strategy.}
+\label{tab:spy-unhedged-summary}
+\resizebox{\textwidth}{!}{%
+\begin{tabular}{lrrrrrrrr}
+\toprule
+Agent & Win Rate & Sharpe Ratio & Sortino Ratio & Annual Return & Annual Volatility & Max Drawdown & Calmar Ratio & Kelly's Criteria \\
+\midrule
+\texttt{Agent\_hardThreshold} & 70.00\% & 1.2646 & 1.3248 & 579.74\% & 151.55\% & -72.31\% & 8.0176 & 0.8345 \\
+\texttt{Agent\_Perc} & 69.23\% & 1.0237 & 1.1120 & 390.01\% & 155.24\% & -72.31\% & 5.3938 & 0.6594 \\
+\texttt{Agent\_Garch} & 68.09\% & 1.6241 & 1.6751 & 1127.63\% & 154.40\% & -70.02\% & 16.1035 & 1.0519 \\
+\texttt{Agent\_LongTerm} & 69.57\% & 0.5235 & 0.4641 & 130.97\% & 159.91\% & -91.09\% & 1.4378 & 0.3274 \\
+\bottomrule
+\end{tabular}%
+}
+\end{table}
+
+Table~\ref{tab:spy-unhedged-summary} shows that removing the hedge can produce very large headline returns in this backtest, especially for \texttt{Agent\_Garch}. However, these returns come at the cost of a dramatic increase in risk: annual volatility rises to roughly 150\%--160\%, and maximum drawdowns remain extremely severe, reaching -91.09\% for \texttt{Agent\_LongTerm}. In practice, the unhedged version is difficult to implement because the strategy is no longer close to a pure volatility trade; it carries substantial directional exposure and becomes much harder to size, finance, and hold through adverse market moves. A visual summary is provided in Appendix~\ref{app:spy-unhedged}.
+
+Prior evidence also suggests that index straddles are often expensive on average, so selling them can be profitable in expectation. Coval and Shumway \cite{coval2001} show that short S\&P 500 straddle positions earn positive average returns, which is consistent with the volatility risk premium idea used in this report. However, that profitability comes with extreme tail risk: a short straddle is highly exposed to large underlying moves, so losses can become very large, especially when the position is left unhedged. In practice, short-straddle positions also require substantial margin. When that capital is locked up as collateral, the strategy imposes a meaningful opportunity cost, because the same funds cannot be deployed elsewhere during the holding period.
+
+\subsection{Limitations}
+This backtesting framework has several important limitations. First, the options traded in practice are not always exactly at the money. Because implied volatility is typically skewed across strikes, the implied volatility used to construct the trading signal may not be fully comparable across contracts. Part of the measured signal may therefore reflect strike-specific volatility skew rather than a clean mispricing of aggregate volatility.
+
+Second, the delta-hedging overlay introduces an implicit gamma-scalping component. Although the hedge is adjusted for risk management rather than for directional trading, rebalancing mechanically tends to buy the underlying after price declines and sell after price increases. This effect is strongest when the option remains close to the money, where gamma is largest. As the traded contract drifts away from the strike, gamma declines, so the realized benefit from this passive gamma-scalping mechanism is weaker than an idealized at-the-money strategy might suggest.
+
+A further limitation is theta decay. As remaining time to maturity becomes short, especially below roughly two weeks, time decay can become substantial and quickly erode the value of long-volatility positions.
+
+In principle, many of these issues could be mitigated by rolling the option position more frequently rather than only once per month. More frequent rolling would keep the traded contracts closer to at the money and could make the volatility signal, gamma exposure, and time-to-maturity profile more consistent over time.
 
 
-
-
-
-
-\clearpage
 
 
 
 \small
-\begin{thebibliography}{9}
-
-\bibitem[Bossu(2014)]{bossu2014}
-Bossu, S\'ebastien (2014).
-\emph{Advanced Equity Derivatives: Volatility and Correlation}.
-Wiley Finance Series, John Wiley \& Sons, Inc., Hoboken, NJ.
-
-\end{thebibliography}
+\bibliographystyle{unsrtnat}
+\bibliography{references}
 
 
 
@@ -598,22 +637,46 @@ TSLA & \texttt{Agent\_LongTerm}      & -11.85\% & +5.65\%  & +41.71\% & -3.36\% 
 \end{longtable}
 \endgroup
 
-\section{Greeks Attribution: Dollar P\&L Time Series}
+\section{SPY Execution-Frictions Diagnostics}
+\label{app:spy-slippage}
+
+Figure~\ref{fig:spy-slippage} presents the SPY slippage diagnostics used to assess how execution frictions affect the strategy.
+
+\begin{figure}[H]
+  \centering
+  \includegraphics[width=0.90\textwidth]{images/SPY_slippage.png}
+  \caption{SPY slippage diagnostics.}
+  \label{fig:spy-slippage}
+\end{figure}
+
+\section{SPY Unhedged Diagnostics}
+\label{app:spy-unhedged}
+
+Figure~\ref{fig:spy-unhedged} presents the SPY unhedged-straddle diagnostics used to compare the no-hedge variant with the delta-hedged strategy.
+
+\begin{figure}[H]
+  \centering
+  \includegraphics[width=0.90\textwidth]{images/SPY_Unhedge.png}
+  \caption{SPY unhedged-straddle diagnostics.}
+  \label{fig:spy-unhedged}
+\end{figure}
+
+\section{Greeks Attribution: Dollar PnL Time Series}
 \label{app:greeks-line-raw}
 
-Figure~\ref{fig:greeks-line-raw} shows the daily dollar P\&L contribution of each Greek component across the full backtest period. Each panel corresponds to one strategy agent and breaks down the daily total P\&L into delta, gamma, vega, theta, vanna, volga, rho, and residual buckets. The time series view complements the pie chart by revealing when and for how long each risk factor dominated, and where attribution spikes occurred.
+Figure~\ref{fig:greeks-line-raw} shows the daily dollar PnL contribution of each Greek component across the full backtest period. Each panel corresponds to one strategy agent and decomposes daily total PnL into delta, gamma, vega, theta, vanna, volga, rho, and residual buckets. This time-series view complements the pie chart by showing when each risk factor dominated and when attribution spikes occurred.
 
 \begin{figure}[H]
   \centering
   \includegraphics[width=0.70\textwidth]{images/greeks_line_raw.png}
-  \caption{Daily dollar P\&L attribution by Greek component for each agent on SPY.}
+  \caption{Daily dollar PnL attribution by Greek component for each agent on SPY.}
   \label{fig:greeks-line-raw}
 \end{figure}
 
 \section{Greeks Exposure Over Time}
 \label{app:greeks-line}
 
-Figure~\ref{fig:greeks-line} shows the evolution of Greeks exposure over the backtest period. Unlike the dollar attribution series, this plot tracks the raw sensitivity levels (e.g.\ net vega, net delta, net gamma) as the position changes, providing insight into how risk exposures build up and unwind across entry, holding, and exit phases.
+Figure~\ref{fig:greeks-line} shows the evolution of Greeks exposure over the backtest period. Unlike the dollar-attribution series, this plot tracks the raw sensitivity levels (e.g.\ net vega, net delta, and net gamma) as the position changes, providing insight into how risk exposures build and unwind across entry, holding, and exit phases.
 
 \begin{figure}[H]
   \centering
@@ -625,7 +688,7 @@ Figure~\ref{fig:greeks-line} shows the evolution of Greeks exposure over the bac
 \section{QQQ: Return and Greeks}
 \label{app:qqq-return-greeks}
 
-Figure~\ref{fig:qqq-return} and Figure~\ref{fig:qqq-greeks} report the return and Greeks diagnostics for QQQ.
+Figure~\ref{fig:qqq-return} and Figure~\ref{fig:qqq-greeks} report the return and Greek diagnostics for QQQ.
 
 \begin{figure}[H]
   \centering
@@ -644,7 +707,7 @@ Figure~\ref{fig:qqq-return} and Figure~\ref{fig:qqq-greeks} report the return an
 \section{DIA: Return and Greeks}
 \label{app:dia-return-greeks}
 
-Figure~\ref{fig:dia-return} and Figure~\ref{fig:dia-greeks} report the return and Greeks diagnostics for DIA.
+Figure~\ref{fig:dia-return} and Figure~\ref{fig:dia-greeks} report the return and Greek diagnostics for DIA.
 
 \begin{figure}[H]
   \centering

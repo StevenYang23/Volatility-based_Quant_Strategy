@@ -14,6 +14,7 @@ class Agent_Percentile:
         allow_short=True,
         delta_hedge=True,
         rehedge_threshold=0.05,
+        slippage_rate=0.003,
     ):
         self.display_name = display_name
         self.entry_low_percentile = entry_percentile
@@ -22,6 +23,7 @@ class Agent_Percentile:
         self.rehedge_threshold = rehedge_threshold
         self.allow_short = allow_short
         self.option_lot_size = 100
+        self.slippage_rate = max(float(slippage_rate), 0.0)
         if not (0.0 < self.entry_low_percentile < 0.5):
             raise ValueError("entry_low_percentile must be in (0, 0.5).")
 
@@ -30,6 +32,7 @@ class Agent_Percentile:
         self.entry_straddle_price = 0.0
         self._hedge_avg_price = 0.0
         self._realized_hedge_pnl = 0.0
+        self._last_return_notional = 0.0
 
         self.prev_data = None
 
@@ -94,6 +97,7 @@ class Agent_Percentile:
 
         yesterday_exposure = (abs(option_units * prev_straddle)
                               + abs(self.num_underlying * self.prev_data["Stock_Close"]))
+        self._last_return_notional = float(yesterday_exposure)
         simple_return = daily_pnl / yesterday_exposure if yesterday_exposure > 0 else 0.0
         safe_simple_return = max(simple_return, -0.999999999)
         daily_return = np.log1p(safe_simple_return)
@@ -172,12 +176,28 @@ class Agent_Percentile:
         self.residual.append(residual_pnl)
 
     def _append_zeros(self):
+        self._last_return_notional = 0.0
         for lst in (self.PnL, self.Return, self.actual_delta,
                     self.delta_attribute, self.gamma_attribute,
                     self.vega_attribute, self.theta_attribute,
                     self.vanna_attribute, self.volga_attribute,
                     self.rho_attribute, self.residual):
             lst.append(0.0)
+
+    def _book_trading_cost(self, cost, trade_notional=0.0):
+        cost = float(cost)
+        if (not np.isfinite(cost)) or cost <= 0.0 or len(self.PnL) == 0:
+            return
+
+        self.PnL[-1] -= cost
+        if len(self.residual) > 0:
+            self.residual[-1] -= cost
+
+        if len(self.Return) > 0:
+            denom = max(float(self._last_return_notional), float(trade_notional))
+            if denom > 0.0:
+                simple_return = self.PnL[-1] / denom
+                self.Return[-1] = np.log1p(max(simple_return, -0.999999999))
 
     def trade(self, data):
         self._compute_daily_pnl(data)
@@ -288,31 +308,46 @@ class Agent_Percentile:
 
         self.num_underlying = target
         self._realized_hedge_pnl += realized
+
+        trade_notional = abs(trade_qty) * spot
+        slippage_cost = self.slippage_rate * trade_notional
+        self._book_trading_cost(slippage_cost, trade_notional=trade_notional)
         return realized
 
     def long_position(self, data):
         self.num_options = 1
-        self.entry_straddle_price = data["Call_Close"] + data["Put_Close"]
+        straddle_price = data["Call_Close"] + data["Put_Close"]
+        self.entry_straddle_price = straddle_price
         if self.delta_hedge:
             self._trade_underlying(
                 -self.option_lot_size * data["Straddle_Delta"], data["Stock_Close"]
             )
+        option_notional = self.option_lot_size * float(straddle_price)
+        self._book_trading_cost(self.slippage_rate * option_notional, trade_notional=option_notional)
         self._log_transaction(data, "long")
 
     def short_position(self, data):
         self.num_options = -1
-        self.entry_straddle_price = data["Call_Close"] + data["Put_Close"]
+        straddle_price = data["Call_Close"] + data["Put_Close"]
+        self.entry_straddle_price = straddle_price
         if self.delta_hedge:
             self._trade_underlying(
                 self.option_lot_size * data["Straddle_Delta"], data["Stock_Close"]
             )
+        option_notional = self.option_lot_size * float(straddle_price)
+        self._book_trading_cost(self.slippage_rate * option_notional, trade_notional=option_notional)
         self._log_transaction(data, "short")
 
     def close_position(self, data=None):
         was_open = self.num_options != 0
+        lots_to_close = abs(int(self.num_options))
         hedge_realized = 0.0
         if was_open and data is not None and self.delta_hedge:
             hedge_realized = self._trade_underlying(0.0, data["Stock_Close"])
+        if was_open and data is not None:
+            straddle_price = float(data["Call_Close"] + data["Put_Close"])
+            option_notional = lots_to_close * self.option_lot_size * straddle_price
+            self._book_trading_cost(self.slippage_rate * option_notional, trade_notional=option_notional)
         self.num_options = 0
         self.num_underlying = 0
         self.entry_straddle_price = 0.0

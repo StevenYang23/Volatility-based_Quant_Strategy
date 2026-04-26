@@ -1,0 +1,63 @@
+\begin{thebibliography}{9}
+\providecommand{\natexlab}[1]{#1}
+\providecommand{\url}[1]{\texttt{#1}}
+\expandafter\ifx\csname urlstyle\endcsname\relax
+  \providecommand{\doi}[1]{doi: #1}\else
+  \providecommand{\doi}{doi: \begingroup \urlstyle{rm}\Url}\fi
+
+\bibitem[Wu and Carr(2009)]{wu2009}
+Liuren Wu and Peter Carr.
+\newblock Variance risk premiums.
+\newblock \emph{Review of Financial Studies}, 22:\penalty0 1311--1341, 2009.
+\newblock \doi{10.1093/rfs/hhn038}.
+
+\bibitem[Bakas and Triantafyllou(2018)]{bakas2018}
+Nikolaos Bakas and Alexandros Triantafyllou.
+\newblock The impact of uncertainty and skewness on the volatility risk
+  premium.
+\newblock \emph{International Review of Financial Analysis}, 59:\penalty0
+  110--120, 2018.
+
+\bibitem[Bossu(2014)]{bossu2014}
+S{\'e}bastien Bossu.
+\newblock \emph{Advanced Equity Derivatives: Volatility and Correlation}.
+\newblock Wiley Finance Series. John Wiley \& Sons, Inc., Hoboken, NJ, 2014.
+
+\bibitem[Wilmott(2006)]{wilmott2006}
+Paul Wilmott.
+\newblock \emph{Paul Wilmott on Quantitative Finance}.
+\newblock Wiley, 2006.
+
+\bibitem[Glosten et~al.(1993)Glosten, Jagannathan, and Runkle]{glosten1993}
+Lawrence~R. Glosten, Ravi Jagannathan, and David~E. Runkle.
+\newblock On the relation between the expected value and the volatility of the
+  nominal excess return on stocks.
+\newblock \emph{Journal of Finance}, 48\penalty0 (5):\penalty0 1779--1801,
+  1993.
+
+\bibitem[Engle and Patton(2001)]{englepatton2001}
+Robert~F. Engle and Andrew~J. Patton.
+\newblock What good is a volatility model?
+\newblock \emph{Quantitative Finance}, 1\penalty0 (2):\penalty0 237--245, 2001.
+
+\bibitem[Marshall(2009)]{marshall2009}
+Cara~Marie Marshall.
+\newblock \emph{Volatility trading: Hedge funds and the search for alpha (new
+  challenges to the efficient markets hypothesis)}.
+\newblock PhD thesis, Fordham University, 2009.
+\newblock URL
+  \url{https://research.library.fordham.edu/dissertations/AAI3353774}.
+\newblock ETD Collection for Fordham University, AAI3353774.
+
+\bibitem[Amihud(2002)]{amihud2002}
+Yakov Amihud.
+\newblock Illiquidity and stock returns: cross-section and time-series effects.
+\newblock \emph{Journal of Financial Markets}, 5\penalty0 (1):\penalty0 31--56,
+  2002.
+
+\bibitem[Coval and Shumway(2001)]{coval2001}
+Joshua~D. Coval and Tyler Shumway.
+\newblock Expected option returns.
+\newblock \emph{Journal of Finance}, 56\penalty0 (3):\penalty0 983--1009, 2001.
+
+\end{thebibliography}
