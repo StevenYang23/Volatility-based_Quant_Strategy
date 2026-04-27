@@ -1,4 +1,4 @@
-This is pdfTeX, Version 3.141592653-2.6-1.40.28 (MiKTeX 25.12) (preloaded format=pdflatex 2026.4.19)  26 APR 2026 12:43
+This is pdfTeX, Version 3.141592653-2.6-1.40.28 (MiKTeX 25.12) (preloaded format=pdflatex 2026.4.19)  27 APR 2026 20:39
 entering extended mode
  restricted \write18 enabled.
  file:line:error style messages enabled.
@@ -342,35 +342,45 @@ Package: uniquecounter 2019/12/15 v1.4 Provide unlimited unique counter (HO)
 Package uniquecounter Info: New unique counter `rerunfilecheck' on input line 284.
 )
 \Hy@SectionHShift=\skip65
-)
-Package hyperref Info: Option `colorlinks' set `true' on input line 27.
-LaTeX Font Info:    Trying to load font information for T1+ptm on input line 41.
- (C:\Users\Lenovo\AppData\Local\Programs\MiKTeX\tex/latex/psnfss\t1ptm.fd
-File: t1ptm.fd 2001/06/04 font definitions for T1/ptm.
-) (C:\Users\Lenovo\AppData\Local\Programs\MiKTeX\tex/latex/l3backend\l3backend-pdftex.def
+) (C:\Users\Lenovo\AppData\Local\Programs\MiKTeX\tex/latex/fontawesome5\fontawesome5.sty (C:\Users\Lenovo\AppData\Local\Programs\MiKTeX\tex/latex/l3kernel\expl3.sty
+Package: expl3 2025-12-24 L3 programming layer (loader) 
+ (C:\Users\Lenovo\AppData\Local\Programs\MiKTeX\tex/latex/l3backend\l3backend-pdftex.def
 File: l3backend-pdftex.def 2025-10-09 L3 backend support: PDF output (pdfTeX)
 \l__color_backend_stack_int=\count324
+))
+Package: fontawesome5 2022/05/02 v5.15.4 Font Awesome 5
+ (C:\Users\Lenovo\AppData\Local\Programs\MiKTeX\tex/latex/l3packages/l3keys2e\l3keys2e.sty
+Package: l3keys2e 2025-10-09 LaTeX2e option processing using LaTeX3 keys
+) (C:\Users\Lenovo\AppData\Local\Programs\MiKTeX\tex/latex/l3packages/xparse\xparse.sty
+Package: xparse 2025-10-09 L3 Experimental document command parser
+) (C:\Users\Lenovo\AppData\Local\Programs\MiKTeX\tex/latex/fontawesome5\fontawesome5-generic-helper.sty
+Package: fontawesome5-generic-helper 2022/05/02 v5.15.4 non-uTeX helper for fontawesome5
+ (C:\Users\Lenovo\AppData\Local\Programs\MiKTeX\tex/latex/fontawesome5\fontawesome5-mapping.def)))
+Package hyperref Info: Option `colorlinks' set `true' on input line 28.
+LaTeX Font Info:    Trying to load font information for T1+ptm on input line 43.
+ (C:\Users\Lenovo\AppData\Local\Programs\MiKTeX\tex/latex/psnfss\t1ptm.fd
+File: t1ptm.fd 2001/06/04 font definitions for T1/ptm.
 ) (main.aux)
 \openout1 = `main.aux'.
 
-LaTeX Font Info:    Checking defaults for OML/cmm/m/it on input line 41.
-LaTeX Font Info:    ... okay on input line 41.
-LaTeX Font Info:    Checking defaults for OMS/cmsy/m/n on input line 41.
-LaTeX Font Info:    ... okay on input line 41.
-LaTeX Font Info:    Checking defaults for OT1/cmr/m/n on input line 41.
-LaTeX Font Info:    ... okay on input line 41.
-LaTeX Font Info:    Checking defaults for T1/cmr/m/n on input line 41.
-LaTeX Font Info:    ... okay on input line 41.
-LaTeX Font Info:    Checking defaults for TS1/cmr/m/n on input line 41.
-LaTeX Font Info:    ... okay on input line 41.
-LaTeX Font Info:    Checking defaults for OMX/cmex/m/n on input line 41.
-LaTeX Font Info:    ... okay on input line 41.
-LaTeX Font Info:    Checking defaults for U/cmr/m/n on input line 41.
-LaTeX Font Info:    ... okay on input line 41.
-LaTeX Font Info:    Checking defaults for PD1/pdf/m/n on input line 41.
-LaTeX Font Info:    ... okay on input line 41.
-LaTeX Font Info:    Checking defaults for PU/pdf/m/n on input line 41.
-LaTeX Font Info:    ... okay on input line 41.
+LaTeX Font Info:    Checking defaults for OML/cmm/m/it on input line 43.
+LaTeX Font Info:    ... okay on input line 43.
+LaTeX Font Info:    Checking defaults for OMS/cmsy/m/n on input line 43.
+LaTeX Font Info:    ... okay on input line 43.
+LaTeX Font Info:    Checking defaults for OT1/cmr/m/n on input line 43.
+LaTeX Font Info:    ... okay on input line 43.
+LaTeX Font Info:    Checking defaults for T1/cmr/m/n on input line 43.
+LaTeX Font Info:    ... okay on input line 43.
+LaTeX Font Info:    Checking defaults for TS1/cmr/m/n on input line 43.
+LaTeX Font Info:    ... okay on input line 43.
+LaTeX Font Info:    Checking defaults for OMX/cmex/m/n on input line 43.
+LaTeX Font Info:    ... okay on input line 43.
+LaTeX Font Info:    Checking defaults for U/cmr/m/n on input line 43.
+LaTeX Font Info:    ... okay on input line 43.
+LaTeX Font Info:    Checking defaults for PD1/pdf/m/n on input line 43.
+LaTeX Font Info:    ... okay on input line 43.
+LaTeX Font Info:    Checking defaults for PU/pdf/m/n on input line 43.
+LaTeX Font Info:    ... okay on input line 43.
 
 *geometry* driver: auto-detecting
 *geometry* detected driver: pdftex
@@ -438,13 +448,13 @@ LaTeX Font Info:    ... okay on input line 41.
 * \@reversemarginfalse
 * (1in=72.27pt=25.4mm, 1cm=28.453pt)
 
-LaTeX Info: Redefining \microtypecontext on input line 41.
-Package microtype Info: Applying patch `item' on input line 41.
-Package microtype Info: Applying patch `toc' on input line 41.
-Package microtype Info: Applying patch `eqnum' on input line 41.
-Package microtype Info: Applying patch `footnote' on input line 41.
-Package microtype Info: Applying patch `verbatim' on input line 41.
-LaTeX Info: Redefining \microtypesetup on input line 41.
+LaTeX Info: Redefining \microtypecontext on input line 43.
+Package microtype Info: Applying patch `item' on input line 43.
+Package microtype Info: Applying patch `toc' on input line 43.
+Package microtype Info: Applying patch `eqnum' on input line 43.
+Package microtype Info: Applying patch `footnote' on input line 43.
+Package microtype Info: Applying patch `verbatim' on input line 43.
+LaTeX Info: Redefining \microtypesetup on input line 43.
 Package microtype Info: Generating PDF output.
 Package microtype Info: Character protrusion enabled (level 2).
 Package microtype Info: Using default protrusion set `alltext'.
@@ -482,7 +492,7 @@ File: color.cfg 2016/01/02 v1.6 sample color configuration
 )
 Package color Info: Driver file: pdftex.def on input line 149.
  (C:\Users\Lenovo\AppData\Local\Programs\MiKTeX\tex/latex/graphics\mathcolor.ltx))
-Package hyperref Info: Link coloring ON on input line 41.
+Package hyperref Info: Link coloring ON on input line 43.
  (main.out) (main.out)
 \@outlinefile=\write3
 \openout3 = `main.out'.
@@ -490,13 +500,13 @@ Package hyperref Info: Link coloring ON on input line 41.
  (C:\Users\Lenovo\AppData\Local\Programs\MiKTeX\tex/latex/microtype\mt-cmr.cfg
 File: mt-cmr.cfg 2013/05/19 v2.2 microtype config. file: Computer Modern Roman (RS)
 )
-LaTeX Font Info:    Trying to load font information for U+msa on input line 44.
+LaTeX Font Info:    Trying to load font information for U+msa on input line 46.
  (C:\Users\Lenovo\AppData\Local\Programs\MiKTeX\tex/latex/amsfonts\umsa.fd
 File: umsa.fd 2013/01/14 v3.01 AMS symbols A
 ) (C:\Users\Lenovo\AppData\Local\Programs\MiKTeX\tex/latex/microtype\mt-msa.cfg
 File: mt-msa.cfg 2006/02/04 v1.1 microtype config. file: AMS symbols (a) (RS)
 )
-LaTeX Font Info:    Trying to load font information for U+msb on input line 44.
+LaTeX Font Info:    Trying to load font information for U+msb on input line 46.
  (C:\Users\Lenovo\AppData\Local\Programs\MiKTeX\tex/latex/amsfonts\umsb.fd
 File: umsb.fd 2013/01/14 v3.01 AMS symbols B
 ) (C:\Users\Lenovo\AppData\Local\Programs\MiKTeX\tex/latex/microtype\mt-msb.cfg
@@ -506,26 +516,30 @@ Package microtype Info: Loading generic protrusion settings for font family
 (microtype)             `cmtt' (encoding: T1).
 (microtype)             For optimal results, create family-specific settings.
 (microtype)             See the microtype manual for details.
+LaTeX Font Info:    Trying to load font information for U+fontawesomebrands0 on input line 46.
+ (C:\Users\Lenovo\AppData\Local\Programs\MiKTeX\tex/latex/fontawesome5\ufontawesomebrands0.fd)
+LaTeX Font Info:    Font shape `U/fontawesomebrands0/solid/n' in size <10> not available
+(Font)              Font shape `U/fontawesomebrands0/regular/n' tried instead on input line 46.
  [1
 
 
-{C:/Users/Lenovo/AppData/Local/MiKTeX/fonts/map/pdftex/pdftex.map}{C:/Users/Lenovo/AppData/Local/Programs/MiKTeX/fonts/enc/dvips/base/8r.enc}]
-<images/pnl_call.png, id=169, 578.16pt x 361.35pt>
+{C:/Users/Lenovo/AppData/Local/MiKTeX/fonts/map/pdftex/pdftex.map}{C:/Users/Lenovo/AppData/Local/Programs/MiKTeX/fonts/enc/dvips/base/8r.enc}{C:/Users/Lenovo/AppData/Local/Programs/MiKTeX/fonts/enc/dvips/fontawesome5/fa5brands0.enc}]
+<images/pnl_call.png, id=171, 578.16pt x 361.35pt>
 File: images/pnl_call.png Graphic file (type png)
 <use images/pnl_call.png>
 Package pdftex.def Info: images/pnl_call.png  used on input line 84.
 (pdftex.def)             Requested size: 166.94296pt x 104.33669pt.
-<images/pnl_put.png, id=171, 578.16pt x 361.35pt>
+<images/pnl_put.png, id=173, 578.16pt x 361.35pt>
 File: images/pnl_put.png Graphic file (type png)
 <use images/pnl_put.png>
 Package pdftex.def Info: images/pnl_put.png  used on input line 88.
 (pdftex.def)             Requested size: 166.94296pt x 104.33669pt.
-<images/pnl_long_straddle.png, id=172, 578.16pt x 361.35pt>
+<images/pnl_long_straddle.png, id=174, 578.16pt x 361.35pt>
 File: images/pnl_long_straddle.png Graphic file (type png)
 <use images/pnl_long_straddle.png>
 Package pdftex.def Info: images/pnl_long_straddle.png  used on input line 98.
 (pdftex.def)             Requested size: 166.94296pt x 104.33669pt.
-<images/pnl_short_straddle.png, id=173, 578.16pt x 361.35pt>
+<images/pnl_short_straddle.png, id=175, 578.16pt x 361.35pt>
 File: images/pnl_short_straddle.png Graphic file (type png)
 <use images/pnl_short_straddle.png>
 Package pdftex.def Info: images/pnl_short_straddle.png  used on input line 102.
@@ -533,69 +547,69 @@ Package pdftex.def Info: images/pnl_short_straddle.png  used on input line 102.
  [2
 
  <./images/pnl_call.png> <./images/pnl_put.png>] [3 <./images/pnl_long_straddle.png> <./images/pnl_short_straddle.png>] [4]
-<images/VRP.png, id=206, 977.90344pt x 412.54124pt>
+<images/VRP.png, id=208, 977.90344pt x 412.54124pt>
 File: images/VRP.png Graphic file (type png)
 <use images/VRP.png>
 Package pdftex.def Info: images/VRP.png  used on input line 198.
 (pdftex.def)             Requested size: 365.68546pt x 154.26823pt.
  [5 <./images/VRP.png>] [6] [7]
-<images/Return_curve.png, id=243, 864.22874pt x 319.94531pt>
+<images/Return_curve.png, id=247, 864.22874pt x 319.94531pt>
 File: images/Return_curve.png Graphic file (type png)
 <use images/Return_curve.png>
-Package pdftex.def Info: images/Return_curve.png  used on input line 340.
+Package pdftex.def Info: images/Return_curve.png  used on input line 336.
 (pdftex.def)             Requested size: 381.58824pt x 141.26456pt.
-<images/Greeks_attribution.png, id=245, 1010.3346pt x 718.3638pt>
+<images/Greeks_attribution.png, id=249, 1010.3346pt x 718.3638pt>
 File: images/Greeks_attribution.png Graphic file (type png)
 <use images/Greeks_attribution.png>
-Package pdftex.def Info: images/Greeks_attribution.png  used on input line 375.
+Package pdftex.def Info: images/Greeks_attribution.png  used on input line 371.
 (pdftex.def)             Requested size: 337.86465pt x 240.2286pt.
  [8 <./images/Return_curve.png>] [9 <./images/Greeks_attribution.png>] [10] [11] (main.bbl [12]) [13]
-<images/SPY_slippage.png, id=298, 878.53218pt x 325.215pt>
+<images/SPY_slippage.png, id=300, 878.53218pt x 325.215pt>
 File: images/SPY_slippage.png Graphic file (type png)
 <use images/SPY_slippage.png>
-Package pdftex.def Info: images/SPY_slippage.png  used on input line 656.
+Package pdftex.def Info: images/SPY_slippage.png  used on input line 658.
 (pdftex.def)             Requested size: 357.73405pt x 132.42593pt.
  [14
 
 ]
-<images/SPY_Unhedge.png, id=307, 879.285pt x 319.94531pt>
+<images/SPY_Unhedge.png, id=309, 879.285pt x 319.94531pt>
 File: images/SPY_Unhedge.png Graphic file (type png)
 <use images/SPY_Unhedge.png>
-Package pdftex.def Info: images/SPY_Unhedge.png  used on input line 668.
+Package pdftex.def Info: images/SPY_Unhedge.png  used on input line 670.
 (pdftex.def)             Requested size: 357.73405pt x 130.16785pt.
-<images/greeks_line_raw.png, id=309, 1261.8342pt x 2327.8167pt>
+<images/greeks_line_raw.png, id=311, 1261.8342pt x 2327.8167pt>
 File: images/greeks_line_raw.png Graphic file (type png)
 <use images/greeks_line_raw.png>
-Package pdftex.def Info: images/greeks_line_raw.png  used on input line 680.
+Package pdftex.def Info: images/greeks_line_raw.png  used on input line 682.
 (pdftex.def)             Requested size: 278.23827pt x 513.29341pt.
  [15 <./images/SPY_slippage.png> <./images/SPY_Unhedge.png>]
-<images/Greeks_line.png, id=320, 1073.2095pt x 1573.3179pt>
+<images/Greeks_line.png, id=322, 1073.2095pt x 1573.3179pt>
 File: images/Greeks_line.png Graphic file (type png)
 <use images/Greeks_line.png>
-Package pdftex.def Info: images/Greeks_line.png  used on input line 692.
+Package pdftex.def Info: images/Greeks_line.png  used on input line 694.
 (pdftex.def)             Requested size: 278.23827pt x 407.90068pt.
  [16 <./images/greeks_line_raw.png>]
-<images/QQQ_return.png, id=329, 1078.9911pt x 858.5676pt>
+<images/QQQ_return.png, id=331, 1078.9911pt x 858.5676pt>
 File: images/QQQ_return.png Graphic file (type png)
 <use images/QQQ_return.png>
-Package pdftex.def Info: images/QQQ_return.png  used on input line 704.
+Package pdftex.def Info: images/QQQ_return.png  used on input line 706.
 (pdftex.def)             Requested size: 337.86465pt x 268.83884pt.
  [17 <./images/Greeks_line.png>]
-<images/QQQ_greeks.png, id=337, 1010.3346pt x 718.3638pt>
+<images/QQQ_greeks.png, id=339, 1010.3346pt x 718.3638pt>
 File: images/QQQ_greeks.png Graphic file (type png)
 <use images/QQQ_greeks.png>
-Package pdftex.def Info: images/QQQ_greeks.png  used on input line 711.
+Package pdftex.def Info: images/QQQ_greeks.png  used on input line 713.
 (pdftex.def)             Requested size: 298.11374pt x 211.95932pt.
-<images/DIA_return.png, id=340, 1078.9911pt x 858.5676pt>
+<images/DIA_return.png, id=342, 1078.9911pt x 858.5676pt>
 File: images/DIA_return.png Graphic file (type png)
 <use images/DIA_return.png>
-Package pdftex.def Info: images/DIA_return.png  used on input line 723.
+Package pdftex.def Info: images/DIA_return.png  used on input line 725.
 (pdftex.def)             Requested size: 337.86465pt x 268.83884pt.
  [18 <./images/QQQ_return.png> <./images/QQQ_greeks.png>]
-<images/DIA_greeks.png, id=349, 1008.1665pt x 718.3638pt>
+<images/DIA_greeks.png, id=351, 1008.1665pt x 718.3638pt>
 File: images/DIA_greeks.png Graphic file (type png)
 <use images/DIA_greeks.png>
-Package pdftex.def Info: images/DIA_greeks.png  used on input line 730.
+Package pdftex.def Info: images/DIA_greeks.png  used on input line 732.
 (pdftex.def)             Requested size: 298.11374pt x 212.41971pt.
  [19 <./images/DIA_return.png> <./images/DIA_greeks.png>] (main.aux)
  ***********
@@ -603,20 +617,20 @@ LaTeX2e <2025-11-01>
 L3 programming layer <2025-12-24>
  ***********
 Package rerunfilecheck Info: File `main.out' has not changed.
-(rerunfilecheck)             Checksum: 8AFC4F023619F1B268C84C587BD04B53;6210.
+(rerunfilecheck)             Checksum: 99F8F26F874441BA7D087B85B834336B;6448.
  ) 
 Here is how much of TeX's memory you used:
- 13490 strings out of 467871
- 213587 string characters out of 5417892
- 712077 words of memory out of 5000000
- 41853 multiletter control sequences out of 15000+600000
- 672944 words of font info for 232 fonts, out of 8000000 for 9000
+ 16622 strings out of 467871
+ 283819 string characters out of 5417892
+ 758959 words of memory out of 5000000
+ 44966 multiletter control sequences out of 15000+600000
+ 673005 words of font info for 229 fonts, out of 8000000 for 9000
  1141 hyphenation exceptions out of 8191
- 75i,14n,79p,1579b,574s stack positions out of 10000i,1000n,20000p,200000b,200000s
- <C:\Users\Lenovo\AppData\Local\MiKTeX\fonts/pk/ljfour/jknappen/ec/dpi525\ectt0800.pk> <C:\Users\Lenovo\AppData\Local\MiKTeX\fonts/pk/ljfour/jknappen/ec/dpi600\ectt0800.pk> <C:\Users\Lenovo\AppData\Local\MiKTeX\fonts/pk/ljfour/jknappen/ec/dpi600\ectt0900.pk> <C:\Users\Lenovo\AppData\Local\MiKTeX\fonts/pk/ljfour/jknappen/ec/dpi600\ectt1000.pk><C:/Users/Lenovo/AppData/Local/Programs/MiKTeX/fonts/type1/public/amsfonts/cm/cmex10.pfb><C:/Users/Lenovo/AppData/Local/Programs/MiKTeX/fonts/type1/public/amsfonts/cmextra/cmex9.pfb><C:/Users/Lenovo/AppData/Local/Programs/MiKTeX/fonts/type1/public/amsfonts/cm/cmmi10.pfb><C:/Users/Lenovo/AppData/Local/Programs/MiKTeX/fonts/type1/public/amsfonts/cm/cmmi6.pfb><C:/Users/Lenovo/AppData/Local/Programs/MiKTeX/fonts/type1/public/amsfonts/cm/cmmi7.pfb><C:/Users/Lenovo/AppData/Local/Programs/MiKTeX/fonts/type1/public/amsfonts/cm/cmmi9.pfb><C:/Users/Lenovo/AppData/Local/Programs/MiKTeX/fonts/type1/public/amsfonts/cm/cmr10.pfb><C:/Users/Lenovo/AppData/Local/Programs/MiKTeX/fonts/type1/public/amsfonts/cm/cmr6.pfb><C:/Users/Lenovo/AppData/Local/Programs/MiKTeX/fonts/type1/public/amsfonts/cm/cmr7.pfb><C:/Users/Lenovo/AppData/Local/Programs/MiKTeX/fonts/type1/public/amsfonts/cm/cmr9.pfb><C:/Users/Lenovo/AppData/Local/Programs/MiKTeX/fonts/type1/public/amsfonts/cm/cmsy10.pfb><C:/Users/Lenovo/AppData/Local/Programs/MiKTeX/fonts/type1/public/amsfonts/cm/cmsy7.pfb><C:/Users/Lenovo/AppData/Local/Programs/MiKTeX/fonts/type1/public/amsfonts/cm/cmsy9.pfb><C:/Users/Lenovo/AppData/Local/Programs/MiKTeX/fonts/type1/urw/times/utmb8a.pfb><C:/Users/Lenovo/AppData/Local/Programs/MiKTeX/fonts/type1/urw/times/utmr8a.pfb><C:/Users/Lenovo/AppData/Local/Programs/MiKTeX/fonts/type1/urw/times/utmri8a.pfb>
-Output written on main.pdf (19 pages, 3028656 bytes).
+ 75i,14n,79p,1212b,562s stack positions out of 10000i,1000n,20000p,200000b,200000s
+ <C:\Users\Lenovo\AppData\Local\MiKTeX\fonts/pk/ljfour/jknappen/ec/dpi525\ectt0800.pk> <C:\Users\Lenovo\AppData\Local\MiKTeX\fonts/pk/ljfour/jknappen/ec/dpi600\ectt0800.pk> <C:\Users\Lenovo\AppData\Local\MiKTeX\fonts/pk/ljfour/jknappen/ec/dpi600\ectt0900.pk> <C:\Users\Lenovo\AppData\Local\MiKTeX\fonts/pk/ljfour/jknappen/ec/dpi600\ectt1000.pk><C:/Users/Lenovo/AppData/Local/Programs/MiKTeX/fonts/type1/public/fontawesome5/FontAwesome5Brands-Regular.pfb><C:/Users/Lenovo/AppData/Local/Programs/MiKTeX/fonts/type1/public/amsfonts/cm/cmex10.pfb><C:/Users/Lenovo/AppData/Local/Programs/MiKTeX/fonts/type1/public/amsfonts/cmextra/cmex9.pfb><C:/Users/Lenovo/AppData/Local/Programs/MiKTeX/fonts/type1/public/amsfonts/cm/cmmi10.pfb><C:/Users/Lenovo/AppData/Local/Programs/MiKTeX/fonts/type1/public/amsfonts/cm/cmmi6.pfb><C:/Users/Lenovo/AppData/Local/Programs/MiKTeX/fonts/type1/public/amsfonts/cm/cmmi7.pfb><C:/Users/Lenovo/AppData/Local/Programs/MiKTeX/fonts/type1/public/amsfonts/cm/cmmi9.pfb><C:/Users/Lenovo/AppData/Local/Programs/MiKTeX/fonts/type1/public/amsfonts/cm/cmr10.pfb><C:/Users/Lenovo/AppData/Local/Programs/MiKTeX/fonts/type1/public/amsfonts/cm/cmr6.pfb><C:/Users/Lenovo/AppData/Local/Programs/MiKTeX/fonts/type1/public/amsfonts/cm/cmr7.pfb><C:/Users/Lenovo/AppData/Local/Programs/MiKTeX/fonts/type1/public/amsfonts/cm/cmr9.pfb><C:/Users/Lenovo/AppData/Local/Programs/MiKTeX/fonts/type1/public/amsfonts/cm/cmsy10.pfb><C:/Users/Lenovo/AppData/Local/Programs/MiKTeX/fonts/type1/public/amsfonts/cm/cmsy7.pfb><C:/Users/Lenovo/AppData/Local/Programs/MiKTeX/fonts/type1/public/amsfonts/cm/cmsy9.pfb><C:/Users/Lenovo/AppData/Local/Programs/MiKTeX/fonts/type1/urw/times/utmb8a.pfb><C:/Users/Lenovo/AppData/Local/Programs/MiKTeX/fonts/type1/urw/times/utmr8a.pfb><C:/Users/Lenovo/AppData/Local/Programs/MiKTeX/fonts/type1/urw/times/utmri8a.pfb>
+Output written on main.pdf (19 pages, 3040713 bytes).
 PDF statistics:
- 549 PDF objects out of 1000 (max. 8388607)
+ 560 PDF objects out of 1000 (max. 8388607)
  91 named destinations out of 1000 (max. 500000)
  44420 words of extra memory for PDF output out of 51595 (max. 10000000)
 
