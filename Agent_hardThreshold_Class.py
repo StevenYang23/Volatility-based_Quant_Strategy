@@ -88,7 +88,8 @@ class Agent_hardThreshold:
         k = self._rehedge_k_multiplier()
         t = abs(self._float_greek(data.get("Straddle_Theta")))
         g = max(self._float_greek(data.get("Straddle_Gamma")), 0.0)
-        inner = 2.0 * t * g
+        # Straddle_Theta is per year of T (same 252-day year as PnL dt); one trading day of decay is |Theta|/252.
+        inner = (2.0 * t * g) / 252.0
         if inner <= 0.0:
             return float(k)
         return float(k) * float(np.sqrt(inner))

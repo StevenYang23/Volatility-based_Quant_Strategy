@@ -27,10 +27,10 @@ All agents accept these parameters:
 | `display_name` | Label used in plots and stats tables | agent-specific |
 | `allow_short` | Whether the agent can sell straddles | `True` |
 | `delta_hedge` | Whether to delta-hedge positions | `True` |
-| `long_rehedge_threshold` | Multiplier `k` for long straddle rehedge band `k * sqrt(2 * |theta| * gamma)` (current-bar straddle Greeks) | `1.5` |
+| `long_rehedge_threshold` | Multiplier `k` for long straddle rehedge band `k * sqrt(2 * |theta| * gamma / 252)` — `Straddle_Theta` is per year of \(T\); `/252` is one trading day of decay (same convention as PnL `dt`) | `1.5` |
 | `short_rehedge_threshold` | Same multiplier for short straddle positions | `0.5` |
 
-The rehedge band is **derived from the gamma–theta breakeven idea** (convexity vs time decay): over a short horizon, half the dollar gamma times the squared move competes with theta carry; tying a characteristic move scale to **current** straddle theta and gamma is the same “where does convexity offset decay?” logic. The implementation uses `k * sqrt(2 * |theta| * gamma)` with separate `k` for long vs short.
+The rehedge band is **derived from the gamma–theta breakeven idea** (convexity vs time decay): over a short horizon, half the dollar gamma times the squared move competes with theta carry; tying a characteristic move scale to **current** straddle theta and gamma is the same “where does convexity offset decay?” logic. The implementation uses `k * sqrt(2 * |theta| * gamma / 252)` with separate `k` for long vs short.
 
 ### Shared Execution Rules
 
