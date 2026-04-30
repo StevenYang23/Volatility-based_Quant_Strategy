@@ -21,13 +21,16 @@ class Agent_Garch:
         display_name="Agent_Garch",
         allow_short=True,
         delta_hedge=True,
-        rehedge_threshold=0.05,
+        long_rehedge_threshold=1.5,
+        short_rehedge_threshold=0.5,
         entry_threshold=1.0,
         slippage_rate=0.003,
     ):
         self.display_name = display_name
         self.delta_hedge = delta_hedge
-        self.rehedge_threshold = rehedge_threshold
+        # k in k * sqrt(2 * |theta| * gamma); long vs short straddle uses separate k; delta change vs last hedge.
+        self.long_rehedge_threshold = float(long_rehedge_threshold)
+        self.short_rehedge_threshold = float(short_rehedge_threshold)
         self.allow_short = allow_short
         self.entry_threshold = max(float(entry_threshold), 0.0)
         self.trading_days_per_year = 252
@@ -54,6 +57,7 @@ class Agent_Garch:
         self.rho_attribute = []
         self.residual = []
         self.position_state_for_pnl = []
+        self._net_delta_at_last_hedge = None
 
         self._omega = np.nan
         self._alpha = np.nan
@@ -95,6 +99,43 @@ class Agent_Garch:
             "Earned": float(self._current_pnl_for_log() if earned is None else earned),
         }
         pd.DataFrame([row]).to_csv(self.log_path, mode="a", header=False, index=False)
+
+    @staticmethod
+    def _float_greek(v):
+        x = float(v) if pd.notna(v) and np.isfinite(v) else 0.0
+        return x
+
+    def _portfolio_net_delta(self, data):
+        d = self._float_greek(data.get("Straddle_Delta"))
+        return self.num_options * self.option_lot_size * d + self.num_underlying
+
+    def _rehedge_k_multiplier(self):
+        return (
+            self.short_rehedge_threshold
+            if self.num_options < 0
+            else self.long_rehedge_threshold
+        )
+
+    def _rehedge_band_width(self, data):
+        k = self._rehedge_k_multiplier()
+        t = abs(self._float_greek(data.get("Straddle_Theta")))
+        g = max(self._float_greek(data.get("Straddle_Gamma")), 0.0)
+        inner = 2.0 * t * g
+        if inner <= 0.0:
+            return float(k)
+        return float(k) * float(np.sqrt(inner))
+
+    def _rehedge_should_trigger(self, net_delta, data):
+        band = self._rehedge_band_width(data)
+        if self._net_delta_at_last_hedge is None:
+            return abs(net_delta) > band
+        return abs(net_delta - float(self._net_delta_at_last_hedge)) > band
+
+    def _rehedge_update_anchor(self, data):
+        self._net_delta_at_last_hedge = self._portfolio_net_delta(data)
+
+    def _rehedge_clear_anchor(self):
+        self._net_delta_at_last_hedge = None
 
     def _compute_daily_pnl(self, data):
         """Path-wise Greeks attribution with hedge bucket and residual."""
@@ -145,7 +186,7 @@ class Agent_Garch:
         effective_delta = prev_delta
         if self.delta_hedge:
             end_net_delta = q * curr_delta + h
-            if abs(end_net_delta) > self.rehedge_threshold:
+            if self._rehedge_should_trigger(end_net_delta, data):
                 # Rehedge day: use midpoint delta to reduce attribution leakage to residual.
                 effective_delta = 0.5 * (prev_delta + curr_delta)
         delta_pnl = q * effective_delta * dS
@@ -489,6 +530,8 @@ class Agent_Garch:
         option_notional = self.option_lot_size * float(straddle_price)
         self._book_trading_cost(self.slippage_rate * option_notional, trade_notional=option_notional)
         self._log_transaction(data, "long")
+        if self.delta_hedge:
+            self._rehedge_update_anchor(data)
 
     def short_position(self, data):
         self.num_options = -1
@@ -501,6 +544,8 @@ class Agent_Garch:
         option_notional = self.option_lot_size * float(straddle_price)
         self._book_trading_cost(self.slippage_rate * option_notional, trade_notional=option_notional)
         self._log_transaction(data, "short")
+        if self.delta_hedge:
+            self._rehedge_update_anchor(data)
 
     def close_position(self, data=None):
         was_open = self.num_options != 0
@@ -515,17 +560,19 @@ class Agent_Garch:
         self.num_options = 0
         self.num_underlying = 0
         self.entry_straddle_price = 0.0
+        if was_open:
+            self._rehedge_clear_anchor()
         if was_open and data is not None:
             self._log_transaction(data, "close", earned=hedge_realized)
 
     def rehedge(self, data):
-        net_delta = (
-            self.num_options * self.option_lot_size * data["Straddle_Delta"]
-            + self.num_underlying
-        )
-        if abs(net_delta) > self.rehedge_threshold:
-            target_underlying = -self.num_options * self.option_lot_size * data["Straddle_Delta"]
+        net_delta = self._portfolio_net_delta(data)
+        if self._rehedge_should_trigger(net_delta, data):
+            target_underlying = -self.num_options * self.option_lot_size * self._float_greek(
+                data.get("Straddle_Delta")
+            )
             hedge_realized = self._trade_underlying(target_underlying, data["Stock_Close"])
+            self._rehedge_update_anchor(data)
             self._log_transaction(data, "rehedge", earned=hedge_realized)
 
     # ------------------------------------------------------------------

@@ -264,7 +264,8 @@ Parameter & Description & Value \\
 \midrule
 \texttt{allow\_short} & Whether short-volatility positions are allowed & True \\
 \texttt{delta\_hedge} & Whether the straddle is hedged with the underlying & True \\
-\texttt{rehedge\_threshold} & Absolute net delta that triggers hedge rebalancing & 0.05 \\
+\texttt{long\_rehedge\_threshold} & Rehedge band multiplier \(k\) for long straddle (\(k\sqrt{2|\Theta|\Gamma}\), current bar) & 1.5 \\
+\texttt{short\_rehedge\_threshold} & Same multiplier \(k\) when short straddle & 0.5 \\
 \bottomrule
 \end{tabularx}
 \end{table}
@@ -334,7 +335,7 @@ Figure~\ref{fig:return-curve} reports cumulative value-ratio paths (top panel) a
 \begin{figure}[H]
   \centering
   \includegraphics[width=0.96\textwidth]{images/Return_curve.png}
-  \caption{SPY cumulative return (value ratio) and daily return comparison across agents.}
+  \caption{Cumulative value ratio (top) and daily returns (bottom) for each agent on SPY. Paths are flat initially while each strategy completes its signal warm-up: most agents need 20 completed trading days before thresholds are available, and the long-horizon agent needs 60.}
   \label{fig:return-curve}
 \end{figure}
 
