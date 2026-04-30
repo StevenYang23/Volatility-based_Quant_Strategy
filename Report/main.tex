@@ -9,6 +9,7 @@
 \usepackage{booktabs}
 \usepackage{amsmath}
 \usepackage{amsfonts}
+\usepackage{amssymb}
 \usepackage{array}
 \usepackage{tabularx}
 \usepackage{longtable}
@@ -172,6 +173,8 @@ A straddle is a natural instrument for this purpose because its payoff depends p
 However, simply buying or selling a straddle does not isolate a pure volatility exposure. The position still carries delta, so part of its profit and loss may come from directional movement in the underlying. To make the trade more interpretable as a volatility position, the strategy uses delta hedging. Operationally, this means trading the underlying stock against the straddle so that net portfolio delta remains close to zero. The goal is to reduce first-order directional exposure from delta and allow realized profit and loss to depend more cleanly on convexity, time decay, and changes in implied volatility.
 
 In practice, repeated delta hedging is closely related to gamma scalping. A long-gamma position that is rebalanced toward delta neutrality tends to buy the underlying after price declines and sell after price increases. If realized price fluctuations are sufficiently large, this rebalancing process can monetize convexity gains and offset part of the theta paid to hold the options \cite{wilmott2006}. Conversely, if realized volatility remains too low, theta decay dominates and the long-volatility position loses money. This gamma-scalping interpretation matters because it clarifies that delta hedging is not merely a risk-control overlay; it is also part of the mechanism through which a volatility position converts realized market movement into profit and loss.
+
+For a long-gamma trade, one therefore wants the \emph{gamma} contribution to dominate the \emph{theta} drag over a typical rebalancing interval. Holding other risks fixed, the local second-order expansion suggests incremental P\&L of the form $\tfrac{1}{2}\Gamma\,(\mathrm{d}S)^2+\Theta\,\mathrm{d}t$ for the option leg (with $\Gamma>0$ for a long straddle and $\Theta<0$ under the usual sign convention). The gamma--theta breakeven in \emph{spot} space is obtained by equating the magnitude of convexity P\&L to time decay, $|\tfrac{1}{2}\Gamma\,(\mathrm{d}S)^2|\approx |\Theta|\,\mathrm{d}t$, which yields a characteristic move scale $|\mathrm{d}S|\gtrsim \sqrt{2\,|\Theta|/\Gamma}$ (up to the chosen $\mathrm{d}t$ normalization). Because $\mathrm{d}\Delta\approx \Gamma\,\mathrm{d}S$ to leading order, the same breakeven logic can be expressed in \emph{delta} space as $|\mathrm{d}\Delta|\gtrsim \sqrt{2\,|\Theta|\,\Gamma}$. The implementation uses a band of the form $k\sqrt{2\,|\Theta|\,\Gamma}$ on the absolute change in net delta since the last hedge, with the same Black--Scholes sensitivities $\Theta$ and $\Gamma$ evaluated each day from the traded straddle, and position-specific multipliers: $k\ge 1$ when long gamma (allow a wider no-trade region so realized convexity can work against theta before rebalancing) and $k<1$ when short gamma (a comparatively tighter band, reflecting that adverse gamma should be cut sooner relative to the same breakeven scale).
 
 \subsection{Trading signal}
 
