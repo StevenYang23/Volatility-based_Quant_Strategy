@@ -267,8 +267,8 @@ Parameter & Description & Value \\
 \midrule
 \texttt{allow\_short} & Whether short-volatility positions are allowed & True \\
 \texttt{delta\_hedge} & Whether the straddle is hedged with the underlying & True \\
-\texttt{long\_rehedge\_threshold} & Rehedge band multiplier \(k\) for long straddle (\(k\sqrt{2|\Theta|\Gamma/252}\), \(\Theta\) per year of \(T\); current bar) & 1.5 \\
-\texttt{short\_rehedge\_threshold} & Same multiplier \(k\) when short straddle & 0.5 \\
+\texttt{long\_rehedge\_threshold} & Rehedge band multiplier \(k\) for long straddle (\(k\sqrt{2|\Theta|\Gamma/252}\), \(\Theta\) per year of \(T\); current bar) & 1.2 \\
+\texttt{short\_rehedge\_threshold} & Same multiplier \(k\) when short straddle & 0.8 \\
 \bottomrule
 \end{tabularx}
 \end{table}
@@ -296,7 +296,7 @@ All parameters are fixed before the backtest is run. They are not fitted, traine
 \section{Data}
 \label{sec:data}
 
-The empirical sample consists of three exchange-traded funds---SPY, QQQ, and DIA---together with a set of individual U.S. equities: AAPL, ACMR, AMD, GOOG, INTC, META, and TSLA. These assets provide a useful mix of broad market exposure and single-name volatility, allowing the strategy to be examined across instruments with different liquidity conditions, sector compositions, and event risk. The individual stocks are not selected through a formal screening rule; rather, they form an illustrative sample of liquid and well-known names rather than a comprehensive cross-section of U.S. equities.
+The empirical sample consists of three exchange-traded funds---SPY, QQQ, and DIA---together with a set of individual U.S. equities: AAPL, ACMR, AMD, GOOG, INTC, META, and TSLA; the backtest is conducted from 2024 May 1st to 2026 March 31st. These assets provide a useful mix of broad market exposure and single-name volatility, allowing the strategy to be examined across instruments with different liquidity conditions, sector compositions, and event risk. The individual stocks are not selected through a formal screening rule; rather, they form an illustrative sample of liquid and well-known names rather than a comprehensive cross-section of U.S. equities.
 
 Although the strategy is implemented on all of these symbols, the report focuses primarily on SPY. The reason is both practical and economic: SPY is the most liquid ETF in the sample; its options market is especially deep, and its prices are therefore less affected by idiosyncratic microstructure noise than those of many single stocks. SPY thus provides the cleanest setting in which to evaluate whether the strategy behaves as intended.
 
@@ -527,9 +527,9 @@ The most important practical finding is the strategy's extreme sensitivity to ex
 An unhedged straddle experiment further illustrates the trade-off. Removing the hedge dramatically raises returns but introduces directional risk and drawdowns of up to 91\%, making the unhedged approach unsuitable for most institutional mandates.
 
 \subsection{Practical Relevance and Future Directions}
-Even if direct trading of the strategy is challenging due to execution costs, the underlying signal framework retains practical value. It provides a disciplined, quantitative way to evaluate whether current option prices are rich or cheap relative to realized volatility benchmarks. Practitioners can apply the same signal as a pre-trade sanity check—for example, before buying options ahead of an earnings event—to assess whether implied volatility is already excessively elevated.
+Even if direct trading of the strategy is challenging due to execution costs, the underlying signal framework retains practical value. It provides a disciplined, quantitative way to evaluate whether current option prices are rich or cheap relative to realized volatility benchmarks. Practitioners can apply the same signal as a pre-trade sanity check—for example, before buying options ahead of an earnings event—to assess whether implied volatility is already excessively elevated. Another implementation path is to express the view through volatility-linked instruments such as VIX derivatives, where the volatility risk premium may be accessed with a different cost and hedging profile.
 
-Future work could focus on several directions: optimizing the roll schedule so that the strategy reopens a fresh at-the-money option position at each rebalance date, and reducing hedge frequency to lower turnover costs. Another natural extension is to combine the current signals into a single decision framework---for example, through weighted averaging, voting rules, or a meta-model---so that information from realized-volatility, percentile-based, and GARCH-style forecasts can be processed jointly rather than traded as separate standalone rules. The same combined framework could then be tested in other asset classes where the volatility risk premium may be more accessible after costs.
+Future work could focus on several directions: optimizing the roll schedule so that the strategy reopens a fresh at-the-money option position at each rebalance date, and reducing hedge frequency to lower turnover costs. Since delta hedging already serves as a core risk-control mechanism by suppressing first-order directional exposure, the strategy is not purely speculative; however, additional overlays such as stop-loss rules could be introduced to further control tail losses during stress episodes. Another natural extension is to combine the current signals into a single decision framework---for example, through weighted averaging, voting rules, or a meta-model---so that information from realized-volatility, percentile-based, and GARCH-style forecasts can be processed jointly rather than traded as separate standalone rules. The same combined framework could then be tested in other asset classes where the volatility risk premium may be more accessible after costs.
 
 \small
 \bibliographystyle{unsrtnat}
