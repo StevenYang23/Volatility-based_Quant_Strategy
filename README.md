@@ -29,6 +29,8 @@ All agents accept these parameters:
 | `delta_hedge` | Whether to delta-hedge positions | `True` |
 | `long_rehedge_threshold` | Multiplier `k` for long straddle rehedge band `k * sqrt(2 * |theta| * gamma / 252)` — `Straddle_Theta` is per year of \(T\); `/252` is one trading day of decay (same convention as PnL `dt`) | `1.5` |
 | `short_rehedge_threshold` | Same multiplier for short straddle positions | `0.5` |
+| `kde_rolling_window` | Number of days used to fit the rolling KDE distribution for signal generation | `63` |
+| `ewma_lambda` | Decay factor for the EWMA variance model (applicable to `Agent_EWMA` and `Agent_Vote`) | `0.94` |
 
 The rehedge band is **derived from the gamma–theta breakeven idea** (convexity vs time decay): over a short horizon, half the dollar gamma times the squared move competes with theta carry; tying a characteristic move scale to **current** straddle theta and gamma is the same “where does convexity offset decay?” logic. The implementation uses `k * sqrt(2 * |theta| * gamma / 252)` with separate `k` for long vs short.
 
@@ -42,11 +44,11 @@ The rehedge band is **derived from the gamma–theta breakeven idea** (convexity
 
 Let **something** be **IV − EWMA(RV)** (EWMA), **IV − long-term RV** (LongTerm), or **VRP**, with **IV** = `Straddle_imp_vol`, **EWMA(RV)** from the model, and **long-term RV** = mean of the prior `long_term_window` daily **RV** values (today’s **RV** is not in **long-term RV** for that day).
 
-**KDE-CDF Signal(something)** = `2 * CDF(something | KDE of past 20 days) - 1`. This transforms the rolling distribution value into a bounded `[-1, 1]` range.
+**KDE-CDF Signal(something)** = `2 * CDF(something | KDE of past kde_rolling_window days) - 1`. This transforms the rolling distribution value into a bounded `[-1, 1]` range.
 
 **Entries:** long when **KDE-CDF < −entry_threshold**; short when **KDE-CDF > +entry_threshold** if `allow_short`. **Exits:** when **KDE-CDF** crosses **0** (long at **≥ 0**, short at **≤ 0** in code).
 
-The KDE-CDF perfectly bounds the signal to `[-1, 1]`, filtering out noise in low-density regions and providing robust, outlier-resistant entry signals without the extreme fluctuations seen in traditional Z-scores.
+The KDE-CDF perfectly bounds the signal to `[-1, 1]`, filtering out noise in low-density regions and providing robust, outlier-resistant entry signals without the extreme fluctuations seen in traditional Z-scores. The `kde_rolling_window` parameter (default 63) controls the memory length of the distribution.
 
 ### Signal Logic (summary table)
 
@@ -59,15 +61,21 @@ The KDE-CDF perfectly bounds the signal to `[-1, 1]`, filtering out noise in low
 ### Agent_EWMA Details
 
 1. **Model:** **Exponentially Weighted Moving Average (EWMA)** of variance.
-2. **Fit / update:** initialized on **20** trailing log-return days, re-fit every **5** days; variance updated daily using lambda = 0.94.
+2. **Fit / update:** initialized on **20** trailing log-return days, re-fit every **5** days; variance updated daily using `ewma_lambda` (default 0.94).
 3. **Forecast:** forward variance path length = **business days from `Date` to `Expiry`** (fallback **30** days if dates missing); **EWMA(RV)** = annualized vol from the variance.
-4. **Signal:** **KDE-CDF(IV − EWMA(RV))** using a rolling KDE over the last **20** values. **`entry_threshold`** is compared against this `[-1, 1]` signal. Exit when the signal **crosses 0**.
+4. **Signal:** **KDE-CDF(IV − EWMA(RV))** using a rolling KDE over the last **`kde_rolling_window`** values. **`entry_threshold`** is compared against this `[-1, 1]` signal. Exit when the signal **crosses 0**.
 
 ### Agent_LongTerm Details
 
 1. **Inside the difference:** **long-term RV** = mean of **`long_term_window`** prior daily **RV** values; difference **IV − long-term RV** (needs finite **RV** and **Straddle_imp_vol**).
-2. **Signal:** **KDE-CDF(IV − long-term RV)** with the same rolling KDE (last **20** points) as in the section above.
+2. **Signal:** **KDE-CDF(IV − long-term RV)** with the same rolling KDE (last **`kde_rolling_window`** points) as in the section above.
 3. **Trade:** long / short vs **±entry_threshold** on that KDE-CDF signal; exit when the signal **crosses 0**.
+
+### Agent_Vote Details
+
+1. **Mechanism:** Combines signals from `Agent_RV`, `Agent_EWMA`, and `Agent_LongTerm`.
+2. **Signal:** Each of the three sub-components generates an independent `[-1, 0, 1]` signal based on their respective KDE-CDF logic and `entry_threshold`.
+3. **Trade:** The three signals are summed with **equal weight**. If the total sum is **≥ 1**, the agent goes long. If the total sum is **≤ -1**, the agent goes short. Otherwise, it stays flat.
 
 ---
 
@@ -127,10 +135,10 @@ Illustrative run from `Back_test.ipynb` (metrics change with data and parameters
 - Dataset: `DataSet/SPY.csv`
 - Shared: `delta_hedge=True`, `long_rehedge_threshold=1.2`, `short_rehedge_threshold=0.8`
 - Agents configured:
-  - `Agent_RV`: `entry_threshold=0.8`
-  - `Agent_EWMA`: `entry_threshold=0.8`
-  - `Agent_LongTerm`: `entry_threshold=0.8`, `long_term_window=60`
-  - `Agent_Vote`: `entry_threshold=0.8`, `long_term_window=60`
+  - `Agent_RV`: `entry_threshold=0.8`, `kde_rolling_window=63`
+  - `Agent_EWMA`: `entry_threshold=0.8`, `kde_rolling_window=63`, `ewma_lambda=0.8`
+  - `Agent_LongTerm`: `entry_threshold=0.8`, `kde_rolling_window=63`, `long_term_window=60`
+  - `Agent_Vote`: `entry_threshold=0.8`, `kde_rolling_window=63`, `ewma_lambda=0.8`, `long_term_window=60`
 
 **Strategy statistics** (same run, results from **SPY**):
 
