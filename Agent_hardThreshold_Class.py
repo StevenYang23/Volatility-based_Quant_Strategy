@@ -1,8 +1,12 @@
 import numpy as np
 import pandas as pd
+import math
 from pathlib import Path
 
 class Agent_hardThreshold:
+    _MIN_SIGNAL_OBS = 20
+    _KDE_ROLLING_WINDOW = 20
+
     def __init__(
         self,
         display_name="Agent_hardThreshold",
@@ -46,7 +50,37 @@ class Agent_hardThreshold:
         self.residual = []
         self.position_state_for_pnl = []
         self._net_delta_at_last_hedge = None
+        self._vrp_history = []
         self._init_trade_log()
+
+    @staticmethod
+    def _norm_cdf(x):
+        return 0.5 * (1.0 + math.erf(x / np.sqrt(2.0)))
+
+    @classmethod
+    def _kde_cdf_signal(cls, values):
+        arr = np.asarray(values, dtype=float)
+        arr = arr[np.isfinite(arr)]
+        if arr.size < 3:
+            return np.nan
+
+        x0 = float(arr[-1])
+        sample = arr[:-1]
+        n = sample.size
+        if n < 2:
+            return np.nan
+
+        std = float(np.std(sample, ddof=1))
+        if (not np.isfinite(std)) or std < 1e-12:
+            return float(2.0 * np.mean(sample <= x0) - 1.0)
+
+        h = 1.06 * std * (n ** (-1.0 / 5.0))
+        h = max(float(h), 1e-6)
+        z = (x0 - sample) / h
+        cdf_vals = np.array([cls._norm_cdf(float(v)) for v in z], dtype=float)
+        p = float(np.mean(cdf_vals))
+        p = min(max(p, 0.0), 1.0)
+        return float(2.0 * p - 1.0)
 
     def _init_trade_log(self):
         logs_dir = Path(__file__).resolve().parent / "logs"
@@ -241,23 +275,39 @@ class Agent_hardThreshold:
             self.prev_data = data
             return
 
-        vrp = data["VRP"]
-        vrp_mean = data["VRP_20d_mean"]
-        vrp_std = data["VRP_20d_std"]
-        if pd.isna(vrp) or pd.isna(vrp_mean) or pd.isna(vrp_std) or vrp_std == 0:
+        vrp = data.get("VRP", np.nan)
+        if pd.isna(vrp) or not np.isfinite(vrp):
+            self.prev_data = data
+            return
+        vrp = float(vrp)
+        self._vrp_history.append(vrp)
+
+        if len(self._vrp_history) < self._MIN_SIGNAL_OBS:
+            self.prev_data = data
+            return
+
+        signal_window = np.asarray(
+            self._vrp_history[-self._KDE_ROLLING_WINDOW :], dtype=float
+        )
+        if np.sum(np.isfinite(signal_window)) < 3:
+            self.prev_data = data
+            return
+
+        kde_signal = self._kde_cdf_signal(signal_window)
+        if not np.isfinite(kde_signal):
             self.prev_data = data
             return
 
         if self.num_options == 0:
-            if vrp > vrp_mean + self.k * vrp_std and self.allow_short:
+            if kde_signal > float(self.k) and self.allow_short:
                 self.short_position(data)
-            elif vrp < vrp_mean - self.k * vrp_std:
+            elif kde_signal < -float(self.k):
                 self.long_position(data)
         elif self.num_options == 1:
-            if vrp > vrp_mean:
+            if kde_signal >= 0:
                 self.close_position(data)
         elif self.num_options == -1:
-            if vrp < vrp_mean:
+            if kde_signal <= 0:
                 self.close_position(data)
 
         if self.num_options != 0 and self.delta_hedge:

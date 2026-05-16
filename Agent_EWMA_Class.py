@@ -1,29 +1,25 @@
 import numpy as np
 import pandas as pd
+import math
 from pathlib import Path
-from warnings import catch_warnings, simplefilter
-
-try:
-    from arch import arch_model
-except ImportError:
-    arch_model = None
 
 
-class Agent_Garch:
-    _LOOKBACK = 20
-    _REFIT_EVERY = 5
+class Agent_EWMA:
+    _EWMA_INIT_WINDOW = 20
+    _EWMA_REFIT_EVERY = 5
+    _EWMA_LAMBDA = 0.94
     _MIN_SPREAD_OBS = 20
-    _Z_ROLLING_WINDOW = 20
+    _KDE_ROLLING_WINDOW = 20
     _DEFAULT_FORECAST_DAYS = 30  # fallback when Expiry/Date are unusable
 
     def __init__(
         self,
-        display_name="Agent_Garch",
+        display_name="Agent_EWMA",
         allow_short=True,
         delta_hedge=True,
         long_rehedge_threshold=1.5,
         short_rehedge_threshold=0.5,
-        entry_threshold=1.0,
+        entry_threshold=0.8,
         slippage_rate=0.003,
     ):
         self.display_name = display_name
@@ -59,20 +55,45 @@ class Agent_Garch:
         self.position_state_for_pnl = []
         self._net_delta_at_last_hedge = None
 
-        self._omega = np.nan
-        self._alpha = np.nan
-        self._gamma = np.nan
-        self._beta = np.nan
-        self._nu = np.nan
+        self._ewma_lambda = float(self._EWMA_LAMBDA)
         self._h = np.nan
-        self._days_since_fit = self._REFIT_EVERY
+        self._days_since_fit = self._EWMA_REFIT_EVERY
         self._stock_close_buf = []
         self._spread_history = []
 
         self.rv_forecast_history = []
         self.iv_rv_spread_history = []
-        self.garch_direction_signal = []
+        self.ewma_direction_signal = []
         self._init_trade_log()
+
+    @staticmethod
+    def _norm_cdf(x):
+        return 0.5 * (1.0 + math.erf(x / np.sqrt(2.0)))
+
+    @classmethod
+    def _kde_cdf_signal(cls, values):
+        arr = np.asarray(values, dtype=float)
+        arr = arr[np.isfinite(arr)]
+        if arr.size < 3:
+            return np.nan
+
+        x0 = float(arr[-1])
+        sample = arr[:-1]
+        n = sample.size
+        if n < 2:
+            return np.nan
+
+        std = float(np.std(sample, ddof=1))
+        if (not np.isfinite(std)) or std < 1e-12:
+            return float(2.0 * np.mean(sample <= x0) - 1.0)
+
+        h = 1.06 * std * (n ** (-1.0 / 5.0))
+        h = max(float(h), 1e-6)
+        z = (x0 - sample) / h
+        cdf_vals = np.array([cls._norm_cdf(float(v)) for v in z], dtype=float)
+        p = float(np.mean(cdf_vals))
+        p = min(max(p, 0.0), 1.0)
+        return float(2.0 * p - 1.0)
 
     # ------------------------------------------------------------------
     # Boilerplate (logging, PnL, Greeks attribution)
@@ -267,13 +288,13 @@ class Agent_Garch:
                 self.Return[-1] = np.log1p(max(simple_return, -0.999999999))
 
     # ------------------------------------------------------------------
-    # GARCH engine
+    # EWMA engine
     # ------------------------------------------------------------------
 
-    def _fit_garch(self):
-        px = np.asarray(self._stock_close_buf[-(self._LOOKBACK + 1):], dtype=float)
+    def _fit_ewma(self):
+        px = np.asarray(self._stock_close_buf[-(self._EWMA_INIT_WINDOW + 1):], dtype=float)
         px = px[np.isfinite(px)]
-        if px.size < self._LOOKBACK + 1:
+        if px.size < self._EWMA_INIT_WINDOW + 1:
             return False
 
         log_ret = np.diff(np.log(px))
@@ -282,54 +303,24 @@ class Agent_Garch:
             return False
 
         log_ret_pct = log_ret * 100.0
-
-        if arch_model is None:
-            var = float(np.var(log_ret_pct))
-            for r in log_ret_pct:
-                var = 0.94 * var + 0.06 * r * r
-            self._omega = 0.0
-            self._alpha = 0.06
-            self._gamma = 0.0
-            self._beta = 0.94
-            self._nu = np.nan
-            self._h = var
-            self._days_since_fit = 0
-            return True
-
-        try:
-            with catch_warnings():
-                simplefilter("ignore")
-                model = arch_model(
-                    log_ret_pct,
-                    mean="Zero",
-                    vol="GARCH",
-                    p=1, o=1, q=1,
-                    dist="t",
-                    rescale=False,
-                )
-                fit = model.fit(disp="off")
-            self._omega = float(fit.params.get("omega", 0.0))
-            self._alpha = float(fit.params.get("alpha[1]", 0.06))
-            self._gamma = float(fit.params.get("gamma[1]", 0.0))
-            self._beta = float(fit.params.get("beta[1]", 0.94))
-            self._nu = float(fit.params.get("nu", np.nan))
-            cond_vol = fit.conditional_volatility
-            self._h = (
-                float(cond_vol.iloc[-1]) ** 2
-                if len(cond_vol) > 0
-                else float(np.var(log_ret_pct))
-            )
-            self._days_since_fit = 0
-            return True
-        except Exception:
+        var = float(np.var(log_ret_pct))
+        if not np.isfinite(var) or var <= 0.0:
             return False
+        lam = float(self._ewma_lambda)
+        for r in log_ret_pct:
+            var = lam * var + (1.0 - lam) * (r * r)
+        if not np.isfinite(var) or var <= 0.0:
+            return False
+        self._h = float(var)
+        self._days_since_fit = 0
+        return True
 
-    def _update_h(self, daily_log_return):
-        if np.isnan(self._omega):
+    def _update_ewma_h(self, daily_log_return):
+        if np.isnan(self._h):
             return
         eps_pct = daily_log_return * 100.0
-        asym = self._gamma if eps_pct < 0 else 0.0
-        self._h = self._omega + (self._alpha + asym) * eps_pct**2 + self._beta * self._h
+        lam = float(self._ewma_lambda)
+        self._h = lam * self._h + (1.0 - lam) * (eps_pct**2)
 
     def _days_to_strike(self, data):
         """Trading days from valuation date to expiry (aligned with option tenor)."""
@@ -342,26 +333,10 @@ class Agent_Garch:
         bd = int(np.busday_count(np.datetime64(as_of), np.datetime64(exp)))
         return max(bd, 1)
 
-    def _garch_rv_annualized(self, horizon_days):
+    def _ewma_rv_annualized(self, horizon_days):
         if np.isnan(self._h) or self._h <= 0:
             return np.nan
-        h_step = float(self._h)
-        omega = float(self._omega) if np.isfinite(self._omega) else 0.0
-        alpha = float(self._alpha) if np.isfinite(self._alpha) else 0.0
-        gamma = float(self._gamma) if np.isfinite(self._gamma) else 0.0
-        beta = float(self._beta) if np.isfinite(self._beta) else 0.0
-        phi = alpha + beta + 0.5 * gamma
-        phi = min(max(phi, 0.0), 1.2)
-
-        horizon = int(horizon_days)
-        h_path = []
-        for _ in range(horizon):
-            h_step = omega + phi * h_step
-            if not np.isfinite(h_step) or h_step <= 0:
-                return np.nan
-            h_path.append(h_step)
-
-        avg_daily_var_pct = float(np.mean(h_path))
+        avg_daily_var_pct = float(self._h)
         sigma_daily = np.sqrt(avg_daily_var_pct) / 100.0
         return sigma_daily * np.sqrt(self.trading_days_per_year)
 
@@ -380,70 +355,66 @@ class Agent_Garch:
 
         if len(self._stock_close_buf) >= 2:
             ret = np.log(self._stock_close_buf[-1] / self._stock_close_buf[-2])
-            if np.isfinite(ret) and not np.isnan(self._omega):
-                self._update_h(ret)
+            if np.isfinite(ret) and not np.isnan(self._h):
+                self._update_ewma_h(ret)
             self._days_since_fit += 1
 
         if (
-            self._days_since_fit >= self._REFIT_EVERY
-            and len(self._stock_close_buf) >= self._LOOKBACK + 1
+            self._days_since_fit >= self._EWMA_REFIT_EVERY
+            and len(self._stock_close_buf) >= self._EWMA_INIT_WINDOW + 1
         ):
-            self._fit_garch()
+            self._fit_ewma()
 
         if data["Force_Close"]:
             self.close_position(data)
-            self.garch_direction_signal.append(0)
+            self.ewma_direction_signal.append(0)
             self.rv_forecast_history.append(np.nan)
             self.iv_rv_spread_history.append(np.nan)
             self.prev_data = data
             return
 
-        garch_rv = self._garch_rv_annualized(self._days_to_strike(data))
+        ewma_rv = self._ewma_rv_annualized(self._days_to_strike(data))
 
-        if pd.isna(curr_iv) or not np.isfinite(garch_rv):
-            self.garch_direction_signal.append(0)
+        if pd.isna(curr_iv) or not np.isfinite(ewma_rv):
+            self.ewma_direction_signal.append(0)
             self.rv_forecast_history.append(
-                garch_rv if np.isfinite(garch_rv) else np.nan
+                ewma_rv if np.isfinite(ewma_rv) else np.nan
             )
             self.iv_rv_spread_history.append(np.nan)
             self.prev_data = data
             return
 
-        spread = float(curr_iv) - garch_rv
+        spread = float(curr_iv) - ewma_rv
         self._spread_history.append(spread)
-        self.rv_forecast_history.append(float(garch_rv))
+        self.rv_forecast_history.append(float(ewma_rv))
         self.iv_rv_spread_history.append(spread)
 
         if len(self._spread_history) < self._MIN_SPREAD_OBS:
-            self.garch_direction_signal.append(0)
+            self.ewma_direction_signal.append(0)
             self.prev_data = data
             return
 
         spread_arr = np.asarray(
-            self._spread_history[-self._Z_ROLLING_WINDOW:], dtype=float
+            self._spread_history[-self._KDE_ROLLING_WINDOW:], dtype=float
         )
-        spread_arr = spread_arr[np.isfinite(spread_arr)]
-        if spread_arr.size < 2:
-            self.garch_direction_signal.append(0)
+        if np.sum(np.isfinite(spread_arr)) < 3:
+            self.ewma_direction_signal.append(0)
             self.prev_data = data
             return
-        mu = float(np.mean(spread_arr))
-        sigma = float(np.std(spread_arr, ddof=1))
-        if sigma < 1e-12:
-            self.garch_direction_signal.append(0)
+        kde_signal = self._kde_cdf_signal(spread_arr)
+        if not np.isfinite(kde_signal):
+            self.ewma_direction_signal.append(0)
             self.prev_data = data
             return
 
-        z = (spread - mu) / sigma
-
-        if z > self.entry_threshold:
+        if kde_signal > self.entry_threshold:
             direction = -1
-        elif z < -self.entry_threshold:
+        elif kde_signal < -self.entry_threshold:
             direction = 1
         else:
             direction = 0
 
-        self.garch_direction_signal.append(direction)
+        self.ewma_direction_signal.append(direction)
 
         target = 0
         if direction > 0:
@@ -460,7 +431,9 @@ class Agent_Garch:
                 else:
                     self.short_position(data)
         else:
-            should_close = (curr_pos == 1 and z >= 0) or (curr_pos == -1 and z <= 0)
+            should_close = (curr_pos == 1 and kde_signal >= 0) or (
+                curr_pos == -1 and kde_signal <= 0
+            )
             if should_close:
                 self.close_position(data)
                 if target != 0 and target != curr_pos:
@@ -597,7 +570,7 @@ class Agent_Garch:
             "return": self.Return,
             "actual_delta": self.actual_delta,
             "position_state_for_pnl": self.position_state_for_pnl,
-            "garch_direction_signal": self.garch_direction_signal,
+            "ewma_direction_signal": self.ewma_direction_signal,
             "rv_forecast_annualized": self.rv_forecast_history,
             "iv_rv_spread": self.iv_rv_spread_history,
         }

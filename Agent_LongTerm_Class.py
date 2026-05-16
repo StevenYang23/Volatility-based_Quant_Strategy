@@ -1,16 +1,17 @@
 import numpy as np
 import pandas as pd
+import math
 from pathlib import Path
 
 
 class Agent_LongTerm:
     _MIN_SPREAD_OBS = 20
-    _Z_ROLLING_WINDOW = 20
+    _KDE_ROLLING_WINDOW = 20
 
     def __init__(
         self,
         display_name="Agent_LongTerm",
-        entry_threshold=0.5,
+        entry_threshold=0.8,
         allow_short=True,
         delta_hedge=True,
         long_rehedge_threshold=1.5,
@@ -58,6 +59,35 @@ class Agent_LongTerm:
         self.long_term_mean_history = []
         self.iv_longterm_spread_history = []
         self._init_trade_log()
+
+    @staticmethod
+    def _norm_cdf(x):
+        return 0.5 * (1.0 + math.erf(x / np.sqrt(2.0)))
+
+    @classmethod
+    def _kde_cdf_signal(cls, values):
+        arr = np.asarray(values, dtype=float)
+        arr = arr[np.isfinite(arr)]
+        if arr.size < 3:
+            return np.nan
+
+        x0 = float(arr[-1])
+        sample = arr[:-1]
+        n = sample.size
+        if n < 2:
+            return np.nan
+
+        std = float(np.std(sample, ddof=1))
+        if (not np.isfinite(std)) or std < 1e-12:
+            return float(2.0 * np.mean(sample <= x0) - 1.0)
+
+        h = 1.06 * std * (n ** (-1.0 / 5.0))
+        h = max(float(h), 1e-6)
+        z = (x0 - sample) / h
+        cdf_vals = np.array([cls._norm_cdf(float(v)) for v in z], dtype=float)
+        p = float(np.mean(cdf_vals))
+        p = min(max(p, 0.0), 1.0)
+        return float(2.0 * p - 1.0)
 
     # ------------------------------------------------------------------
     # Boilerplate (logging, PnL, Greeks attribution)
@@ -310,24 +340,21 @@ class Agent_LongTerm:
             self.prev_data = data
             return
 
-        spread_arr = np.asarray(self._spread_history[-self._Z_ROLLING_WINDOW :], dtype=float)
-        spread_arr = spread_arr[np.isfinite(spread_arr)]
-        if spread_arr.size < 2:
+        spread_arr = np.asarray(self._spread_history[-self._KDE_ROLLING_WINDOW :], dtype=float)
+        if np.sum(np.isfinite(spread_arr)) < 3:
             self.longterm_direction_signal.append(0)
             self.prev_data = data
             return
 
-        mu = float(np.mean(spread_arr))
-        sigma_z = float(np.std(spread_arr, ddof=1))
-        if sigma_z < 1e-12:
+        kde_signal = self._kde_cdf_signal(spread_arr)
+        if not np.isfinite(kde_signal):
             self.longterm_direction_signal.append(0)
             self.prev_data = data
             return
 
-        z = (spread - mu) / sigma_z
-        if z > self.entry_threshold:
+        if kde_signal > self.entry_threshold:
             direction = -1
-        elif z < -self.entry_threshold:
+        elif kde_signal < -self.entry_threshold:
             direction = 1
         else:
             direction = 0
@@ -348,7 +375,9 @@ class Agent_LongTerm:
                 else:
                     self.short_position(data)
         else:
-            should_close = (curr_pos == 1 and z >= 0) or (curr_pos == -1 and z <= 0)
+            should_close = (curr_pos == 1 and kde_signal >= 0) or (
+                curr_pos == -1 and kde_signal <= 0
+            )
             if should_close:
                 self.close_position(data)
                 if target != 0 and target != curr_pos:

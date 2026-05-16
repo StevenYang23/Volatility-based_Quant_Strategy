@@ -1,6 +1,6 @@
 # Volatility-based Quant Strategy
 
-*Documentation last aligned with the repository: **April 2026**.*
+*Documentation last aligned with the repository: **May 2026**.*
 
 This repository implements a low-frequency volatility timing quantitative strategy. The strategy aims to capture the Volatility Risk Premium (VRP) and mean-reverting properties of implied volatility by actively trading at-the-money (ATM) ~30-day straddles.
 
@@ -38,43 +38,36 @@ The rehedge band is **derived from the gamma–theta breakeven idea** (convexity
 - **Underlying hedge**: hedge shares are always rounded to an **integer**
 - **Re-hedge PnL**: realized using hedge average entry vs exit price on underlying reductions/flips
 
-### What “Zscore” means
+### What “KDE-CDF Signal” means
 
-Let **something** be **IV − GARCH_RV** (Garch), **IV − long-term RV** (LongTerm), or **VRP**, with **IV** = `Straddle_imp_vol`, **GARCH_RV** from the model, and **long-term RV** = mean of the prior `long_term_window` daily **RV** values (today’s **RV** is not in **long-term RV** for that day).
+Let **something** be **IV − EWMA_RV** (EWMA), **IV − long-term RV** (LongTerm), or **VRP**, with **IV** = `Straddle_imp_vol`, **EWMA_RV** from the model, and **long-term RV** = mean of the prior `long_term_window` daily **RV** values (today’s **RV** is not in **long-term RV** for that day).
 
-**Zscore(something)** = (**something** − **20-day rolling mean of something**) / (**20-day rolling std of something**).
+**KDE-CDF Signal(something)** = `2 * CDF(something | KDE of past 20 days) - 1`. This transforms the rolling distribution value into a bounded `[-1, 1]` range.
 
-**Entries:** long when **Zscore < −entry_threshold**; short when **Zscore > +entry_threshold** if `allow_short`. **Exits:** when **Zscore** crosses **0** (long at **≥ 0**, short at **≤ 0** in code).
+**Entries:** long when **KDE-CDF < −entry_threshold**; short when **KDE-CDF > +entry_threshold** if `allow_short`. **Exits:** when **KDE-CDF** crosses **0** (long at **≥ 0**, short at **≤ 0** in code).
 
-As an informal analogy (the series are not literally Gaussian): you can read the cutoff like a **hypothesis test** that treats **today’s** value versus the **20-day** rolling window as if **something** were **normal** in that window, with **entry_threshold** (and **k** on **VRP** for **`Agent_hardThreshold`**) playing a role similar to choosing a **confidence level**—how far into the tail “today” must sit before you enter.
+The KDE-CDF perfectly bounds the signal to `[-1, 1]`, filtering out noise in low-density regions and providing robust, outlier-resistant entry signals without the extreme fluctuations seen in traditional Z-scores.
 
 ### Signal Logic (summary table)
 
 | Agent | Long (Buy Vol) | Short (Sell Vol) | Close (Exit) |
 | :--- | :--- | :--- | :--- |
-| **`Agent_hardThreshold`** | **Zscore(VRP) < −k** | **Zscore(VRP) > +k** if `allow_short` | **Zscore(VRP)** crosses **0** |
-| **`Agent_Percentile`** | rolling **Zscore(VRP)** at/below expanding **low** percentile of **past** rolling Zscores | rolling **Zscore(VRP)** at/above expanding **high** percentile | rolling **Zscore(VRP)** crosses expanding **median** of **past** rolling Zscores |
-| **`Agent_Garch`** | **Z-Score(IV − GARCH_RV) < −entry_threshold** | **Zscore(IV − GARCH_RV) > +entry_threshold** if `allow_short` | Zscore **crosses 0** |
-| **`Agent_LongTerm`** | **Z-Score(IV − long-term RV) < −entry_threshold** | **Zscore(IV − long-term RV) > +entry_threshold** if `allow_short` | Zscore **crosses 0** |
+| **`Agent_hardThreshold`** | **KDE-CDF(VRP) < −k** | **KDE-CDF(VRP) > +k** if `allow_short` | **KDE-CDF(VRP)** crosses **0** |
+| **`Agent_EWMA`** | **KDE-CDF(IV − EWMA_RV) < −entry_threshold** | **KDE-CDF(IV − EWMA_RV) > +entry_threshold** if `allow_short` | KDE-CDF **crosses 0** |
+| **`Agent_LongTerm`** | **KDE-CDF(IV − long-term RV) < −entry_threshold** | **KDE-CDF(IV − long-term RV) > +entry_threshold** if `allow_short` | KDE-CDF **crosses 0** |
 
-### Agent_Garch Details
+### Agent_EWMA Details
 
-1. **Model:** **GJR-GARCH(1,1)** with **Student-t** residuals.
-2. **Fit / update:** fit on **20** trailing log-return days, re-fit every **5** days; variance updated daily with asymmetry.
-3. **Forecast:** forward variance path length = **business days from `Date` to `Expiry`** (fallback **30** days if dates missing); **GARCH_RV** = annualized vol from the **mean** variance along that path.
-4. **Signal:** **Zscore(IV − GARCH_RV)** using **rolling mean** and **rolling std** of **(IV − GARCH_RV)** over the last **20** values, after **20** warmup differences. **`entry_threshold`** is in those Zscore units. Exit when that Zscore **crosses 0**.
+1. **Model:** **Exponentially Weighted Moving Average (EWMA)** of variance.
+2. **Fit / update:** initialized on **20** trailing log-return days, re-fit every **5** days; variance updated daily using lambda = 0.94.
+3. **Forecast:** forward variance path length = **business days from `Date` to `Expiry`** (fallback **30** days if dates missing); **EWMA_RV** = annualized vol from the variance.
+4. **Signal:** **KDE-CDF(IV − EWMA_RV)** using a rolling KDE over the last **20** values. **`entry_threshold`** is compared against this `[-1, 1]` signal. Exit when the signal **crosses 0**.
 
 ### Agent_LongTerm Details
 
 1. **Inside the difference:** **long-term RV** = mean of **`long_term_window`** prior daily **RV** values; difference **IV − long-term RV** (needs finite **RV** and **Straddle_imp_vol**).
-2. **Signal:** **Zscore(IV − long-term RV)** with the same **rolling mean** and **rolling std** (last **20** points, **20** warmup) as in the section above.
-3. **Trade:** long / short vs **±entry_threshold** on that Zscore; exit when the Zscore **crosses 0**.
-
-
-### Agent_Percentile Details
-
-1. **Zscore(VRP):** same **20-day rolling** mean and std as **`Agent_hardThreshold`** (`VRP_20d_mean`, `VRP_20d_std` from the notebook).
-2. **Trade:** after **20** stored daily rolling z-scores, enter long / short when today’s **Zscore(VRP)** is at or below the **entry_percentile** low tail / at or above the **(1 − entry_percentile)** high tail of the **history of past** rolling z-scores; exit when z crosses the **median** of that history (same expanding-percentile logic as before, but on **rolling** z).
+2. **Signal:** **KDE-CDF(IV − long-term RV)** with the same rolling KDE (last **20** points) as in the section above.
+3. **Trade:** long / short vs **±entry_threshold** on that KDE-CDF signal; exit when the signal **crosses 0**.
 
 ---
 
@@ -101,7 +94,7 @@ Each row is **one equity session** in the monthly **ATM straddle** panel (`Build
 | `r` | Annual risk-free rate, **decimal** (e.g. 1m Treasury aligned to `Date`). |
 | `RV` | Trailing **realized** vol, annualized decimal (from return history; NaN until enough days). Feeds **long-term RV** in LongTerm. |
 | `K` | Strike **K** of the month’s ATM straddle. |
-| `Expiry` | Listed expiry of the options (used e.g. for **Garch** horizon to expiry). |
+| `Expiry` | Listed expiry of the options (used e.g. for **EWMA** horizon to expiry). |
 | `Call_Close` / `Put_Close` | Call / put **close** (straddle premium = sum). |
 | `Call_Sym` / `Put_Sym` | Polygon OCC-style identifiers for the legs. |
 | `Call_imp_vol` / `Put_imp_vol` | Leg implied vol **σ**, decimal (chain IV or BS inversion). |
@@ -122,7 +115,7 @@ Each row is **one equity session** in the monthly **ATM straddle** panel (`Build
 
 ## Backtest (`Back_test.ipynb`)
 
-1. Load a dataset CSV and pre-compute rolling VRP statistics: **`VRP_20d_mean`** / **`VRP_20d_std`** = **20**-day rolling mean / std of **VRP** (`min_periods=20`); optional **`VRP_40d_std`**
+1. Load a dataset CSV
 2. Instantiate agents with desired parameters
 3. Loop through each row calling `agent.trade(row)`
 4. Generate performance stats and visualizations
@@ -132,21 +125,21 @@ Each row is **one equity session** in the monthly **ATM straddle** panel (`Build
 Illustrative run from `Back_test.ipynb` (metrics change with data and parameters):
 
 - Dataset: `DataSet/SPY.csv`
-- Shared: `delta_hedge=True`, `long_rehedge_threshold=1.5`, `short_rehedge_threshold=0.5`
+- Shared: `delta_hedge=True`, `long_rehedge_threshold=1.2`, `short_rehedge_threshold=0.8`
 - Agents configured:
-  - `Agent_hardThreshold`: `k=1`
-  - `Agent_Perc`: `entry_percentile=0.2`
-  - `Agent_Garch`: `entry_threshold=1`
-  - `Agent_LongTerm`: `entry_threshold=1`, `long_term_window=60`
+  - `Agent_hardThreshold`: `k=0.8`
+  - `Agent_EWMA`: `entry_threshold=0.8`
+  - `Agent_LongTerm`: `entry_threshold=0.8`, `long_term_window=60`
+  - `Agent_Vote`: `entry_threshold=0.8`, `long_term_window=60`
 
 **Strategy statistics** (same run, results from **SPY**):
 
 | Agent | Win Rate | Sharpe Ratio | Sortino Ratio | Annual Return | Annual Volatility | Max Drawdown | Calmar Ratio | Kelly's Criteria |
 | :--- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
-| `Agent_hardThreshold` | 75.00% | 1.3248 | 1.1919 | 25.96% | 17.42% | -11.12% | 2.3339 | 7.6042 |
-| `Agent_Perc` | 74.36% | 1.2669 | 1.1843 | 24.85% | 17.52% | -11.12% | 2.2345 | 7.2312 |
-| `Agent_Garch` | 74.47% | 1.0765 | 0.9319 | 21.49% | 18.09% | -14.99% | 1.4338 | 5.9520 |
-| `Agent_LongTerm` | 73.91% | 1.0618 | 1.1015 | 25.56% | 21.44% | -11.95% | 2.1381 | 4.9534 |
+| `Agent_hardThreshold` | 76.92% | 1.5174 | 1.6838 | 26.84% | 15.67% | -11.48% | 2.3387 | 9.6841 |
+| `Agent_EWMA` | 75.00% | 1.0104 | 0.8521 | 18.91% | 17.14% | -15.53% | 1.2177 | 5.8948 |
+| `Agent_LongTerm` | 71.43% | 1.1208 | 1.0838 | 25.40% | 20.20% | -11.12% | 2.2839 | 5.5496 |
+| `Agent_Vote` | 77.55% | 1.8084 | 1.9830 | 41.64% | 19.25% | -8.69% | 4.7911 | 9.3933 |
 
 ## Greeks Attribution Calculation
 
@@ -201,7 +194,7 @@ The backtest suite generates comprehensive visualizations to analyze returns, ri
 - **Panel 1 (top):** Cumulative geometric return (value ratio) of the underlying versus each agent
 - **Panel 2:** Daily log-return of each agent
 - **Panel 3:** **RV** (`RV` column) vs **IV** (`Straddle_imp_vol`) over time
-- **Panel 4 (bottom):** **VRP** level with rolling 20-day mean and ±1 std bands (computed in-notebook or from `VRP_20d_*` columns when present)
+- **Panel 4 (bottom):** **VRP** level with rolling 20-day mean and ±1 std bands
 
 ### 2. PnL Attribution by Greek (Pie Breakdown)
 ![Greeks Attribution Pie](demo/Greeks_Attribution_Pie.png)
