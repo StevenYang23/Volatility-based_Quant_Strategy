@@ -60,22 +60,15 @@ The KDE-CDF perfectly bounds the signal to `[-1, 1]`, filtering out noise in low
 
 ### Agent_EWMA Details
 
-1. **Model:** **Exponentially Weighted Moving Average (EWMA)** of variance.
-2. **Fit / update:** initialized on **20** trailing log-return days, re-fit every **5** days; variance updated daily using `ewma_lambda` (default 0.94).
-3. **Forecast:** forward variance path length = **business days from `Date` to `Expiry`** (fallback **30** days if dates missing); **EWMA(RV)** = annualized vol from the variance.
-4. **Signal:** **KDE-CDF(IV − EWMA(RV))** using a rolling KDE over the last **`kde_rolling_window`** values. **`entry_threshold`** is compared against this `[-1, 1]` signal. Exit when the signal **crosses 0**.
+This agent operates identically to `Agent_RV`, but simply replaces the standard trailing **RV** with an **Exponentially Weighted Moving Average of RV (EWMA(RV))**. The decay factor is controlled by the `ewma_lambda` parameter.
 
 ### Agent_LongTerm Details
 
-1. **Inside the difference:** **long-term RV** = mean of **`long_term_window`** prior daily **RV** values; difference **IV − long-term RV** (needs finite **RV** and **Straddle_imp_vol**).
-2. **Signal:** **KDE-CDF(IV − long-term RV)** with the same rolling KDE (last **`kde_rolling_window`** points) as in the section above.
-3. **Trade:** long / short vs **±entry_threshold** on that KDE-CDF signal; exit when the signal **crosses 0**.
+This agent operates identically to `Agent_RV`, but replaces the standard trailing **RV** with a longer-term moving average of **RV**. The length of this moving average is controlled by the `long_term_window` parameter.
 
 ### Agent_Vote Details
 
-1. **Mechanism:** Combines signals from `Agent_RV`, `Agent_EWMA`, and `Agent_LongTerm`.
-2. **Signal:** Each of the three sub-components generates an independent `[-1, 0, 1]` signal based on their respective KDE-CDF logic and `entry_threshold`.
-3. **Trade:** The three signals are summed with **equal weight**. If the total sum is **≥ 1**, the agent goes long. If the total sum is **≤ -1**, the agent goes short. Otherwise, it stays flat.
+This agent combines the signals from `Agent_RV`, `Agent_EWMA`, and `Agent_LongTerm` using an equal-weight voting mechanism. Each sub-component independently votes to go long (+1), short (-1), or stay flat (0). The agent executes a trade if the total sum of the votes is **≥ 1** (Long) or **≤ -1** (Short), otherwise it remains flat.
 
 ---
 
