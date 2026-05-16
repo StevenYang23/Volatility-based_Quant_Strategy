@@ -6,7 +6,6 @@ from pathlib import Path
 
 class Agent_Vote:
     _MIN_SPREAD_OBS = 20
-    _KDE_ROLLING_WINDOW = 20
     _EWMA_INIT_WINDOW = 20
     _EWMA_REFIT_EVERY = 5
     _EWMA_LAMBDA = 0.94
@@ -16,12 +15,13 @@ class Agent_Vote:
         self,
         display_name="Agent_Vote",
         entry_threshold=0.8,
-        longterm_rv_weight=0.5,
+        kde_rolling_window=63,
+        ewma_lambda=0.94,
         allow_short=True,
         delta_hedge=True,
-        long_rehedge_threshold=1.5,
-        short_rehedge_threshold=0.5,
-        long_term_window=126,
+        long_rehedge_threshold=1.2,
+        short_rehedge_threshold=0.8,
+        long_term_window=40,
         slippage_rate=0.003,
     ):
         self.display_name = display_name
@@ -31,8 +31,7 @@ class Agent_Vote:
         self.short_rehedge_threshold = float(short_rehedge_threshold)
         self.allow_short = allow_short
         self.entry_threshold = max(float(entry_threshold), 0.0)
-        self.hard_threshold_k = max(float(entry_threshold), 0.0)
-        self.longterm_rv_weight = float(longterm_rv_weight)
+        self.kde_rolling_window = max(int(kde_rolling_window), 3)
         self.long_term_window = max(int(long_term_window), 5)
         self.trading_days_per_year = 252
         self.option_lot_size = 100
@@ -66,16 +65,16 @@ class Agent_Vote:
         self._longterm_spread_history = []
         self._ewma_spread_history = []
         self._stock_close_buf = []
-        self._ewma_lambda = float(self._EWMA_LAMBDA)
+        self._ewma_lambda = float(ewma_lambda)
         self._h = np.nan
         self._days_since_fit = self._EWMA_REFIT_EVERY
-        self.hardthreshold_direction_signal = []
+        self.rv_direction_signal = []
         self.longterm_direction_signal = []
         self.ewma_direction_signal = []
         self.overall_direction_signal = []
         self.long_term_mean_history = []
         self.iv_longterm_spread_history = []
-        self.ewma_rv_forecast_history = []
+        self.ewma_rv_history = []
         self.ewma_kde_history = []
         self.longterm_kde_history = []
         self._init_trade_log()
@@ -306,13 +305,12 @@ class Agent_Vote:
                 self.Return[-1] = np.log1p(max(simple_return, -0.999999999))
 
     def _append_signal_nan(self):
-        self.hardthreshold_direction_signal.append(0)
+        self.rv_direction_signal.append(0)
         self.longterm_direction_signal.append(0)
         self.ewma_direction_signal.append(0)
         self.overall_direction_signal.append(0)
         self.long_term_mean_history.append(np.nan)
-        self.iv_longterm_spread_history.append(np.nan)
-        self.ewma_rv_forecast_history.append(np.nan)
+        self.ewma_rv_history.append(np.nan)
         self.ewma_kde_history.append(np.nan)
         self.longterm_kde_history.append(np.nan)
 
@@ -413,37 +411,36 @@ class Agent_Vote:
             self.prev_data = data
             return
 
-        hardthreshold_signal = 0
+        rv_signal = 0
         vrp = data.get("VRP", np.nan)
         if pd.notna(vrp) and np.isfinite(vrp):
             self._vrp_history.append(float(vrp))
             if len(self._vrp_history) >= self._MIN_SPREAD_OBS:
                 signal_window = np.asarray(
-                    self._vrp_history[-self._KDE_ROLLING_WINDOW :], dtype=float
+                    self._vrp_history[-self.kde_rolling_window :], dtype=float
                 )
                 if np.sum(np.isfinite(signal_window)) >= 3:
                     kde_signal = self._kde_cdf_signal(signal_window)
                     if np.isfinite(kde_signal):
-                        if kde_signal > self.hard_threshold_k:
-                            hardthreshold_signal = -1
-                        elif kde_signal < -self.hard_threshold_k:
-                            hardthreshold_signal = 1
+                        if kde_signal > self.entry_threshold:
+                            rv_signal = -1
+                        elif kde_signal < -self.entry_threshold:
+                            rv_signal = 1
 
         window_rv = self._rv_buf[-self.long_term_window :]
         long_term_mean = float(np.mean(window_rv))
         longterm_spread = float(curr_iv) - long_term_mean
-        ewma_forecast_rv = self._ewma_rv_annualized(self._days_to_strike(data))
+        ewma_rv = self._ewma_rv_annualized(self._days_to_strike(data))
         ewma_spread = (
-            float(curr_iv) - float(ewma_forecast_rv) if np.isfinite(ewma_forecast_rv) else np.nan
+            float(curr_iv) - float(ewma_rv) if np.isfinite(ewma_rv) else np.nan
         )
 
         self._longterm_spread_history.append(longterm_spread)
         if np.isfinite(ewma_spread):
             self._ewma_spread_history.append(ewma_spread)
         self.long_term_mean_history.append(long_term_mean)
-        self.iv_longterm_spread_history.append(longterm_spread)
-        self.ewma_rv_forecast_history.append(
-            float(ewma_forecast_rv) if np.isfinite(ewma_forecast_rv) else np.nan
+        self.ewma_rv_history.append(
+            float(ewma_rv) if np.isfinite(ewma_rv) else np.nan
         )
 
         self._rv_buf.append(float(curr_rv))
@@ -454,7 +451,7 @@ class Agent_Vote:
         longterm_kde = np.nan
         if len(self._longterm_spread_history) >= self._MIN_SPREAD_OBS:
             spread_arr = np.asarray(
-                self._longterm_spread_history[-self._KDE_ROLLING_WINDOW :], dtype=float
+                self._longterm_spread_history[-self.kde_rolling_window :], dtype=float
             )
             if np.sum(np.isfinite(spread_arr)) >= 3:
                 longterm_kde = self._kde_cdf_signal(spread_arr)
@@ -468,7 +465,7 @@ class Agent_Vote:
         ewma_kde = np.nan
         if len(self._ewma_spread_history) >= self._MIN_SPREAD_OBS and np.isfinite(ewma_spread):
             ewma_arr = np.asarray(
-                self._ewma_spread_history[-self._KDE_ROLLING_WINDOW :], dtype=float
+                self._ewma_spread_history[-self.kde_rolling_window :], dtype=float
             )
             if np.sum(np.isfinite(ewma_arr)) >= 3:
                 ewma_kde = self._kde_cdf_signal(ewma_arr)
@@ -478,7 +475,7 @@ class Agent_Vote:
                     elif ewma_kde < -self.entry_threshold:
                         ewma_signal = 1
 
-        overall_vote = hardthreshold_signal + longterm_signal + ewma_signal
+        overall_vote = rv_signal + longterm_signal + ewma_signal
         if overall_vote <= -1:
             direction = -1
         elif overall_vote >= 1:
@@ -486,7 +483,7 @@ class Agent_Vote:
         else:
             direction = 0
 
-        self.hardthreshold_direction_signal.append(hardthreshold_signal)
+        self.rv_direction_signal.append(rv_signal)
         self.longterm_direction_signal.append(longterm_signal)
         self.ewma_direction_signal.append(ewma_signal)
         self.overall_direction_signal.append(direction)
@@ -641,14 +638,13 @@ class Agent_Vote:
             "return": self.Return,
             "actual_delta": self.actual_delta,
             "position_state_for_pnl": self.position_state_for_pnl,
-            "hardthreshold_direction_signal": self.hardthreshold_direction_signal,
+            "rv_direction_signal": self.rv_direction_signal,
             "longterm_direction_signal": self.longterm_direction_signal,
             "ewma_direction_signal": self.ewma_direction_signal,
             "overall_direction_signal": self.overall_direction_signal,
             "long_term_mean_rv": self.long_term_mean_history,
             "long_term_mean_iv": self.long_term_mean_history,
-            "iv_longterm_spread": self.iv_longterm_spread_history,
-            "ewma_rv_forecast_annualized": self.ewma_rv_forecast_history,
+            "ewma_rv_annualized": self.ewma_rv_history,
             "longterm_kde": self.longterm_kde_history,
             "ewma_kde": self.ewma_kde_history,
         }

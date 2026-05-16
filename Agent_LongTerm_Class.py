@@ -6,17 +6,17 @@ from pathlib import Path
 
 class Agent_LongTerm:
     _MIN_SPREAD_OBS = 20
-    _KDE_ROLLING_WINDOW = 20
 
     def __init__(
         self,
         display_name="Agent_LongTerm",
         entry_threshold=0.8,
+        kde_rolling_window=63,
         allow_short=True,
         delta_hedge=True,
-        long_rehedge_threshold=1.5,
-        short_rehedge_threshold=0.5,
-        long_term_window=126,
+        long_rehedge_threshold=1.2,
+        short_rehedge_threshold=0.8,
+        long_term_window=40,
         slippage_rate=0.003,
     ):
         self.display_name = display_name
@@ -26,6 +26,7 @@ class Agent_LongTerm:
         self.short_rehedge_threshold = float(short_rehedge_threshold)
         self.allow_short = allow_short
         self.entry_threshold = max(float(entry_threshold), 0.0)
+        self.kde_rolling_window = max(int(kde_rolling_window), 3)
         self.long_term_window = max(int(long_term_window), 5)
         self.option_lot_size = 100
         self.slippage_rate = max(float(slippage_rate), 0.0)
@@ -57,7 +58,6 @@ class Agent_LongTerm:
         self._spread_history = []
         self.longterm_direction_signal = []
         self.long_term_mean_history = []
-        self.iv_longterm_spread_history = []
         self._init_trade_log()
 
     @staticmethod
@@ -288,7 +288,6 @@ class Agent_LongTerm:
     def _append_signal_nan(self, direction=0):
         self.longterm_direction_signal.append(direction)
         self.long_term_mean_history.append(np.nan)
-        self.iv_longterm_spread_history.append(np.nan)
 
     # ------------------------------------------------------------------
     # Signal: current IV vs rolling mean of prior RV values
@@ -329,7 +328,6 @@ class Agent_LongTerm:
 
         self._spread_history.append(spread)
         self.long_term_mean_history.append(long_term_mean)
-        self.iv_longterm_spread_history.append(spread)
 
         self._rv_buf.append(float(curr_rv))
         if len(self._rv_buf) > self._rv_buf_max:
@@ -340,7 +338,7 @@ class Agent_LongTerm:
             self.prev_data = data
             return
 
-        spread_arr = np.asarray(self._spread_history[-self._KDE_ROLLING_WINDOW :], dtype=float)
+        spread_arr = np.asarray(self._spread_history[-self.kde_rolling_window :], dtype=float)
         if np.sum(np.isfinite(spread_arr)) < 3:
             self.longterm_direction_signal.append(0)
             self.prev_data = data
@@ -513,7 +511,6 @@ class Agent_LongTerm:
             "longterm_direction_signal": self.longterm_direction_signal,
             "long_term_mean_rv": self.long_term_mean_history,
             "long_term_mean_iv": self.long_term_mean_history,
-            "iv_longterm_spread": self.iv_longterm_spread_history,
         }
 
     def regime_attribution_summary(self, include_flat=False):

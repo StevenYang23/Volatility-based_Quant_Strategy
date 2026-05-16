@@ -9,7 +9,6 @@ class Agent_EWMA:
     _EWMA_REFIT_EVERY = 5
     _EWMA_LAMBDA = 0.94
     _MIN_SPREAD_OBS = 20
-    _KDE_ROLLING_WINDOW = 20
     _DEFAULT_FORECAST_DAYS = 30  # fallback when Expiry/Date are unusable
 
     def __init__(
@@ -17,9 +16,11 @@ class Agent_EWMA:
         display_name="Agent_EWMA",
         allow_short=True,
         delta_hedge=True,
-        long_rehedge_threshold=1.5,
-        short_rehedge_threshold=0.5,
+        long_rehedge_threshold=1.2,
+        short_rehedge_threshold=0.8,
         entry_threshold=0.8,
+        kde_rolling_window=63,
+        ewma_lambda=0.94,
         slippage_rate=0.003,
     ):
         self.display_name = display_name
@@ -29,6 +30,7 @@ class Agent_EWMA:
         self.short_rehedge_threshold = float(short_rehedge_threshold)
         self.allow_short = allow_short
         self.entry_threshold = max(float(entry_threshold), 0.0)
+        self.kde_rolling_window = max(int(kde_rolling_window), 3)
         self.trading_days_per_year = 252
         self.option_lot_size = 100
         self.slippage_rate = max(float(slippage_rate), 0.0)
@@ -55,14 +57,13 @@ class Agent_EWMA:
         self.position_state_for_pnl = []
         self._net_delta_at_last_hedge = None
 
-        self._ewma_lambda = float(self._EWMA_LAMBDA)
+        self._ewma_lambda = float(ewma_lambda)
         self._h = np.nan
         self._days_since_fit = self._EWMA_REFIT_EVERY
         self._stock_close_buf = []
         self._spread_history = []
 
-        self.rv_forecast_history = []
-        self.iv_rv_spread_history = []
+        self.ewma_rv_history = []
         self.ewma_direction_signal = []
         self._init_trade_log()
 
@@ -368,8 +369,6 @@ class Agent_EWMA:
         if data["Force_Close"]:
             self.close_position(data)
             self.ewma_direction_signal.append(0)
-            self.rv_forecast_history.append(np.nan)
-            self.iv_rv_spread_history.append(np.nan)
             self.prev_data = data
             return
 
@@ -377,17 +376,12 @@ class Agent_EWMA:
 
         if pd.isna(curr_iv) or not np.isfinite(ewma_rv):
             self.ewma_direction_signal.append(0)
-            self.rv_forecast_history.append(
-                ewma_rv if np.isfinite(ewma_rv) else np.nan
-            )
-            self.iv_rv_spread_history.append(np.nan)
             self.prev_data = data
             return
 
         spread = float(curr_iv) - ewma_rv
         self._spread_history.append(spread)
-        self.rv_forecast_history.append(float(ewma_rv))
-        self.iv_rv_spread_history.append(spread)
+        self.ewma_rv_history.append(float(ewma_rv))
 
         if len(self._spread_history) < self._MIN_SPREAD_OBS:
             self.ewma_direction_signal.append(0)
@@ -395,7 +389,7 @@ class Agent_EWMA:
             return
 
         spread_arr = np.asarray(
-            self._spread_history[-self._KDE_ROLLING_WINDOW:], dtype=float
+            self._spread_history[-self.kde_rolling_window:], dtype=float
         )
         if np.sum(np.isfinite(spread_arr)) < 3:
             self.ewma_direction_signal.append(0)
@@ -416,31 +410,17 @@ class Agent_EWMA:
 
         self.ewma_direction_signal.append(direction)
 
-        target = 0
-        if direction > 0:
-            target = 1
-        elif direction < 0 and self.allow_short:
-            target = -1
-
-        curr_pos = self.num_options
-
-        if curr_pos == 0:
-            if target != 0:
-                if target > 0:
-                    self.long_position(data)
-                else:
-                    self.short_position(data)
-        else:
-            should_close = (curr_pos == 1 and kde_signal >= 0) or (
-                curr_pos == -1 and kde_signal <= 0
-            )
-            if should_close:
+        if self.num_options == 0:
+            if kde_signal > self.entry_threshold and self.allow_short:
+                self.short_position(data)
+            elif kde_signal < -self.entry_threshold:
+                self.long_position(data)
+        elif self.num_options == 1:
+            if kde_signal >= 0:
                 self.close_position(data)
-                if target != 0 and target != curr_pos:
-                    if target > 0:
-                        self.long_position(data)
-                    else:
-                        self.short_position(data)
+        elif self.num_options == -1:
+            if kde_signal <= 0:
+                self.close_position(data)
 
         if self.num_options != 0 and self.delta_hedge:
             self.rehedge(data)
@@ -571,8 +551,7 @@ class Agent_EWMA:
             "actual_delta": self.actual_delta,
             "position_state_for_pnl": self.position_state_for_pnl,
             "ewma_direction_signal": self.ewma_direction_signal,
-            "rv_forecast_annualized": self.rv_forecast_history,
-            "iv_rv_spread": self.iv_rv_spread_history,
+            "ewma_rv_annualized": self.ewma_rv_history,
         }
 
     def regime_attribution_summary(self, include_flat=False):

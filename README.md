@@ -40,7 +40,7 @@ The rehedge band is **derived from the gamma–theta breakeven idea** (convexity
 
 ### What “KDE-CDF Signal” means
 
-Let **something** be **IV − EWMA_RV** (EWMA), **IV − long-term RV** (LongTerm), or **VRP**, with **IV** = `Straddle_imp_vol`, **EWMA_RV** from the model, and **long-term RV** = mean of the prior `long_term_window` daily **RV** values (today’s **RV** is not in **long-term RV** for that day).
+Let **something** be **IV − EWMA(RV)** (EWMA), **IV − long-term RV** (LongTerm), or **VRP**, with **IV** = `Straddle_imp_vol`, **EWMA(RV)** from the model, and **long-term RV** = mean of the prior `long_term_window` daily **RV** values (today’s **RV** is not in **long-term RV** for that day).
 
 **KDE-CDF Signal(something)** = `2 * CDF(something | KDE of past 20 days) - 1`. This transforms the rolling distribution value into a bounded `[-1, 1]` range.
 
@@ -52,16 +52,16 @@ The KDE-CDF perfectly bounds the signal to `[-1, 1]`, filtering out noise in low
 
 | Agent | Long (Buy Vol) | Short (Sell Vol) | Close (Exit) |
 | :--- | :--- | :--- | :--- |
-| **`Agent_hardThreshold`** | **KDE-CDF(VRP) < −k** | **KDE-CDF(VRP) > +k** if `allow_short` | **KDE-CDF(VRP)** crosses **0** |
-| **`Agent_EWMA`** | **KDE-CDF(IV − EWMA_RV) < −entry_threshold** | **KDE-CDF(IV − EWMA_RV) > +entry_threshold** if `allow_short` | KDE-CDF **crosses 0** |
+| **`Agent_RV`** | **KDE-CDF(VRP) < −entry_threshold** | **KDE-CDF(VRP) > +entry_threshold** if `allow_short` | **KDE-CDF(VRP)** crosses **0** |
+| **`Agent_EWMA`** | **KDE-CDF(IV − EWMA(RV)) < −entry_threshold** | **KDE-CDF(IV − EWMA(RV)) > +entry_threshold** if `allow_short` | KDE-CDF **crosses 0** |
 | **`Agent_LongTerm`** | **KDE-CDF(IV − long-term RV) < −entry_threshold** | **KDE-CDF(IV − long-term RV) > +entry_threshold** if `allow_short` | KDE-CDF **crosses 0** |
 
 ### Agent_EWMA Details
 
 1. **Model:** **Exponentially Weighted Moving Average (EWMA)** of variance.
 2. **Fit / update:** initialized on **20** trailing log-return days, re-fit every **5** days; variance updated daily using lambda = 0.94.
-3. **Forecast:** forward variance path length = **business days from `Date` to `Expiry`** (fallback **30** days if dates missing); **EWMA_RV** = annualized vol from the variance.
-4. **Signal:** **KDE-CDF(IV − EWMA_RV)** using a rolling KDE over the last **20** values. **`entry_threshold`** is compared against this `[-1, 1]` signal. Exit when the signal **crosses 0**.
+3. **Forecast:** forward variance path length = **business days from `Date` to `Expiry`** (fallback **30** days if dates missing); **EWMA(RV)** = annualized vol from the variance.
+4. **Signal:** **KDE-CDF(IV − EWMA(RV))** using a rolling KDE over the last **20** values. **`entry_threshold`** is compared against this `[-1, 1]` signal. Exit when the signal **crosses 0**.
 
 ### Agent_LongTerm Details
 
@@ -127,7 +127,7 @@ Illustrative run from `Back_test.ipynb` (metrics change with data and parameters
 - Dataset: `DataSet/SPY.csv`
 - Shared: `delta_hedge=True`, `long_rehedge_threshold=1.2`, `short_rehedge_threshold=0.8`
 - Agents configured:
-  - `Agent_hardThreshold`: `k=0.8`
+  - `Agent_RV`: `entry_threshold=0.8`
   - `Agent_EWMA`: `entry_threshold=0.8`
   - `Agent_LongTerm`: `entry_threshold=0.8`, `long_term_window=60`
   - `Agent_Vote`: `entry_threshold=0.8`, `long_term_window=60`
@@ -136,7 +136,7 @@ Illustrative run from `Back_test.ipynb` (metrics change with data and parameters
 
 | Agent | Win Rate | Sharpe Ratio | Sortino Ratio | Annual Return | Annual Volatility | Max Drawdown | Calmar Ratio | Kelly's Criteria |
 | :--- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
-| `Agent_hardThreshold` | 76.92% | 1.5174 | 1.6838 | 26.84% | 15.67% | -11.48% | 2.3387 | 9.6841 |
+| `Agent_RV` | 76.92% | 1.5174 | 1.6838 | 26.84% | 15.67% | -11.48% | 2.3387 | 9.6841 |
 | `Agent_EWMA` | 75.00% | 1.0104 | 0.8521 | 18.91% | 17.14% | -15.53% | 1.2177 | 5.8948 |
 | `Agent_LongTerm` | 71.43% | 1.1208 | 1.0838 | 25.40% | 20.20% | -11.12% | 2.2839 | 5.5496 |
 | `Agent_Vote` | 77.55% | 1.8084 | 1.9830 | 41.64% | 19.25% | -8.69% | 4.7911 | 9.3933 |

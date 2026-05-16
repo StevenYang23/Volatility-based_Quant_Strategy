@@ -3,22 +3,23 @@ import pandas as pd
 import math
 from pathlib import Path
 
-class Agent_hardThreshold:
+class Agent_RV:
     _MIN_SIGNAL_OBS = 20
-    _KDE_ROLLING_WINDOW = 20
 
     def __init__(
         self,
-        display_name="Agent_hardThreshold",
-        k=1,
+        display_name="Agent_RV",
+        entry_threshold=0.8,
+        kde_rolling_window=63,
         allow_short=True,
         delta_hedge=True,
-        long_rehedge_threshold=1.5,
-        short_rehedge_threshold=0.5,
+        long_rehedge_threshold=1.2,
+        short_rehedge_threshold=0.8,
         slippage_rate=0.003,
     ):
         self.display_name = display_name
-        self.k = k
+        self.entry_threshold = max(float(entry_threshold), 0.0)
+        self.kde_rolling_window = max(int(kde_rolling_window), 3)
         self.delta_hedge = delta_hedge
         # Rehedge k (separate long/short); not the VRP entry `k` above.
         self.long_rehedge_threshold = float(long_rehedge_threshold)
@@ -51,6 +52,7 @@ class Agent_hardThreshold:
         self.position_state_for_pnl = []
         self._net_delta_at_last_hedge = None
         self._vrp_history = []
+        self.rv_direction_signal = []
         self._init_trade_log()
 
     @staticmethod
@@ -272,43 +274,71 @@ class Agent_hardThreshold:
 
         if data["Force_Close"]:
             self.close_position(data)
+            self.rv_direction_signal.append(0)
             self.prev_data = data
             return
 
         vrp = data.get("VRP", np.nan)
         if pd.isna(vrp) or not np.isfinite(vrp):
+            self.rv_direction_signal.append(0)
             self.prev_data = data
             return
         vrp = float(vrp)
         self._vrp_history.append(vrp)
 
         if len(self._vrp_history) < self._MIN_SIGNAL_OBS:
+            self.rv_direction_signal.append(0)
             self.prev_data = data
             return
 
         signal_window = np.asarray(
-            self._vrp_history[-self._KDE_ROLLING_WINDOW :], dtype=float
+            self._vrp_history[-self.kde_rolling_window :], dtype=float
         )
         if np.sum(np.isfinite(signal_window)) < 3:
+            self.rv_direction_signal.append(0)
             self.prev_data = data
             return
 
         kde_signal = self._kde_cdf_signal(signal_window)
         if not np.isfinite(kde_signal):
+            self.rv_direction_signal.append(0)
             self.prev_data = data
             return
+            
+        if kde_signal > self.entry_threshold:
+            direction = -1
+        elif kde_signal < -self.entry_threshold:
+            direction = 1
+        else:
+            direction = 0
 
-        if self.num_options == 0:
-            if kde_signal > float(self.k) and self.allow_short:
-                self.short_position(data)
-            elif kde_signal < -float(self.k):
-                self.long_position(data)
-        elif self.num_options == 1:
-            if kde_signal >= 0:
+        self.rv_direction_signal.append(direction)
+
+        target = 0
+        if direction > 0:
+            target = 1
+        elif direction < 0 and self.allow_short:
+            target = -1
+
+        curr_pos = self.num_options
+
+        if curr_pos == 0:
+            if target != 0:
+                if target > 0:
+                    self.long_position(data)
+                else:
+                    self.short_position(data)
+        else:
+            should_close = (curr_pos == 1 and kde_signal >= 0) or (
+                curr_pos == -1 and kde_signal <= 0
+            )
+            if should_close:
                 self.close_position(data)
-        elif self.num_options == -1:
-            if kde_signal <= 0:
-                self.close_position(data)
+                if target != 0 and target != curr_pos:
+                    if target > 0:
+                        self.long_position(data)
+                    else:
+                        self.short_position(data)
 
         if self.num_options != 0 and self.delta_hedge:
             self.rehedge(data)
@@ -433,6 +463,7 @@ class Agent_hardThreshold:
             "return": self.Return,
             "actual_delta": self.actual_delta,
             "position_state_for_pnl": self.position_state_for_pnl,
+            "rv_direction_signal": self.rv_direction_signal,
         }
 
     def regime_attribution_summary(self, include_flat=False):
